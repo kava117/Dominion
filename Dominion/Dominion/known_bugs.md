@@ -16,6 +16,8 @@
 - Plains square is not currently working as intended 
 - Barbs also not working as intended? 
     - requires further play testing 
+- Caves allow you to come up in multiple other caves, rather than coming up in one and then "connecting" those caves
+
 
 ## Things that could/should be added 
 
