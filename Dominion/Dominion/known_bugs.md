@@ -4,7 +4,7 @@
 ## General UI 
 
 - Currently no way to restart or start a new game 
-- Ui is not centered 
+- Ui is not centered nor justified on the screen, and making a larger board does not auto-fit to the screen size.
 
 ## Frontend 
 
@@ -13,11 +13,11 @@
 
 ## Backend 
 
-- Plains square is not currently working as intended 
+- Wizard is shown at all times, but needs to be hidden by the Fog of War.
+- Plains square is not currently working as intended; they should allow the player to take two consecutive blocks in any cardinal direction, or one block diagonal to the Plains.
 - Barbs also not working as intended? 
-    - requires further play testing 
-- Caves allow you to come up in multiple other caves, rather than coming up in one and then "connecting" those caves
-
+    - Add debug statement to show when the Barbarians are triggered, and which way they charge.
+- Caves should not give permanent access to all other Caves: once one Cave is used to travel to another Cave, those two Caves are considered connected and no longer have the special access quality.
 
 ## Things that could/should be added 
 
