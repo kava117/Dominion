@@ -4,27 +4,26 @@ set -e
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 
 # Start Flask backend in the background
-if ! [ -x "$(pip -v Flask)" ]; then
-    echo "flask not found, installing..."
-    # Installation commands go here
-    pip install flask
+if pip show flask &> /dev/null; then
+    echo "flask is already installed"
 else
-    echo "flask is already installed."
+    echo "flask not found, installing..."
+    pip install flask
 fi
+
+# Start Vite frontend in the foreground
+if [ -f "./frontend/node_modules/.bin/vite" ]; then
+    echo "vite is already installed."
+else
+    echo "vite not found, installing..."
+    npm install vite --prefix ./frontend
+fi
+
 cd "$ROOT/backend"
 python main.py &
 BACKEND_PID=$!
 
 # Kill backend when this script exits (Ctrl+C or any signal)
 trap "kill $BACKEND_PID 2>/dev/null" EXIT
-
-# Start Vite frontend in the foreground
-if ! [ -x "$(npm -v vite)" ]; then
-    echo "vite not found, installing..."
-    # Installation commands go here 
-    npm install vite
-else
-    echo "vite is already installed."
-fi
 cd "$ROOT/frontend"
 npm run dev
