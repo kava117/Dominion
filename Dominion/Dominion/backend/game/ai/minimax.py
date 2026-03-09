@@ -8,7 +8,7 @@ Public API:
 Move dict shapes:
     {"type": "normal",  "row": r, "col": c, "tile_type": str}
     {"type": "wizard",  "row": r, "col": c}
-    {"type": "plains",  "row": r, "col": c, "first": [r,c]|None, "second": [r,c]|None}
+    {"type": "plains",  "row": r, "col": c, "first": [r,c]|None}
 """
 from __future__ import annotations
 
@@ -23,7 +23,6 @@ from game.ai.heuristic import evaluate
 from game.rules import apply_move, cardinal_neighbors, CARDINAL_DELTAS
 from game.effects import (
     apply_plains_first_pick,
-    apply_plains_second_pick,
     apply_wizard_teleport,
 )
 
@@ -88,8 +87,6 @@ def apply_ai_move(state: "GameState", move: dict) -> None:
         apply_move(state, move["row"], move["col"])
         if move.get("first") is not None and state.data.get("phase") == "plains_first_pick":
             apply_plains_first_pick(state, move["first"][0], move["first"][1])
-            if move.get("second") is not None and state.data.get("phase") == "plains_second_pick":
-                apply_plains_second_pick(state, move["second"][0], move["second"][1])
 
 
 def get_all_moves(state: "GameState") -> list[dict]:
@@ -205,45 +202,22 @@ def minimax_no_pruning(
 # ===========================================================================
 
 def _enumerate_plains(state: "GameState", pr: int, pc: int) -> list[dict]:
-    """Enumerate all (plains_pos, first_pick, second_pick) compound moves."""
+    """Enumerate all (plains_pos, bonus_pick) compound moves."""
     sim1 = _clone(state)
     apply_move(sim1, pr, pc)
 
     if sim1.data.get("phase") != "plains_first_pick":
         # Plains ended immediately (no picks available)
-        return [{"type": "plains", "row": pr, "col": pc, "first": None, "second": None,
-                 "tile_type": "plains"}]
+        return [{"type": "plains", "row": pr, "col": pc, "first": None, "tile_type": "plains"}]
 
     first_picks = sim1.data["phase_data"].get("valid_picks", [])
     if not first_picks:
-        return [{"type": "plains", "row": pr, "col": pc, "first": None, "second": None,
-                 "tile_type": "plains"}]
+        return [{"type": "plains", "row": pr, "col": pc, "first": None, "tile_type": "plains"}]
 
-    compounds = []
-    for fp in first_picks:
-        sim2 = _clone(sim1)
-        apply_plains_first_pick(sim2, fp[0], fp[1])
-
-        if sim2.data.get("phase") == "plains_second_pick":
-            second_picks = sim2.data["phase_data"].get("valid_picks", [])
-            if not second_picks:
-                compounds.append({
-                    "type": "plains", "row": pr, "col": pc,
-                    "first": fp, "second": None, "tile_type": "plains",
-                })
-            else:
-                for sp in second_picks:
-                    compounds.append({
-                        "type": "plains", "row": pr, "col": pc,
-                        "first": fp, "second": sp, "tile_type": "plains",
-                    })
-        else:
-            compounds.append({
-                "type": "plains", "row": pr, "col": pc,
-                "first": fp, "second": None, "tile_type": "plains",
-            })
-
-    return compounds
+    return [
+        {"type": "plains", "row": pr, "col": pc, "first": fp, "tile_type": "plains"}
+        for fp in first_picks
+    ]
 
 
 def _order_moves(moves: list[dict], state: "GameState") -> None:
@@ -292,7 +266,5 @@ def _simulate(state: "GameState", move: dict) -> "GameState":
         apply_move(sim, move["row"], move["col"])
         if move.get("first") is not None and sim.data.get("phase") == "plains_first_pick":
             apply_plains_first_pick(sim, move["first"][0], move["first"][1])
-            if move.get("second") is not None and sim.data.get("phase") == "plains_second_pick":
-                apply_plains_second_pick(sim, move["second"][0], move["second"][1])
 
     return sim

@@ -23,18 +23,23 @@ from game.rules import (
 # ---------------------------------------------------------------------------
 
 def plains_first_picks(state: "GameState", row: int, col: int) -> list[list[int]]:
-    """Compute valid first-pick candidates for a Plains tile at (row, col).
+    """Compute valid pick candidates for a Plains tile at (row, col).
 
-    Spec: tiles at exactly cardinal distance 2 (one per cardinal direction),
-    unclaimed and non-Mountain.
+    Any unclaimed non-Mountain tile within Manhattan distance 1-2 is valid.
+    Diagonals (Manhattan distance 2) are included since they cost 2 moves.
     """
     picks = []
-    for dr, dc in CARDINAL_DELTAS:
-        nr, nc = row + dr * 2, col + dc * 2
-        if 0 <= nr < state.height and 0 <= nc < state.width:
-            t = state.tile(nr, nc)
-            if t["owner"] is None and t["type"] != "mountain":
-                picks.append([nr, nc])
+    for dr in range(-2, 3):
+        for dc in range(-2, 3):
+            if dr == 0 and dc == 0:
+                continue
+            if abs(dr) + abs(dc) > 2:
+                continue
+            nr, nc = row + dr, col + dc
+            if 0 <= nr < state.height and 0 <= nc < state.width:
+                t = state.tile(nr, nc)
+                if t["owner"] is None and t["type"] != "mountain":
+                    picks.append([nr, nc])
     return picks
 
 
@@ -56,33 +61,7 @@ def apply_plains(state: "GameState", row: int, col: int, _player: str) -> None:
 
 
 def apply_plains_first_pick(state: "GameState", row: int, col: int) -> None:
-    """Claim the first Plains bonus tile and set up the second-pick phase."""
-    from game.rules import _claim_tile  # local import to avoid circular dep
-
-    player = state.data["turn"]
-    _claim_tile(state, row, col, player, in_plains_sub_move=True)
-
-    # Compute second picks: unclaimed, non-Mountain cardinal neighbors of first pick
-    second_picks = [
-        [nr, nc]
-        for nr, nc in cardinal_neighbors(row, col, state.height, state.width)
-        if state.tile(nr, nc)["owner"] is None
-        and state.tile(nr, nc)["type"] != "mountain"
-    ]
-
-    if not second_picks:
-        _end_plains(state)
-        return
-
-    state.data["phase"] = "plains_second_pick"
-    state.data["phase_data"] = {
-        "first_pick_pos": [row, col],
-        "valid_picks":    second_picks,
-    }
-
-
-def apply_plains_second_pick(state: "GameState", row: int, col: int) -> None:
-    """Claim the second Plains bonus tile and end the Plains phase."""
+    """Claim the Plains bonus tile and end the Plains phase."""
     from game.rules import _claim_tile
 
     player = state.data["turn"]
