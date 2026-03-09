@@ -2,7 +2,7 @@
 import pytest
 from game.rules import apply_move, remove_from_pools, compute_visible
 from game.effects import (
-    apply_plains, apply_plains_first_pick, apply_plains_second_pick,
+    apply_plains, apply_plains_first_pick,
     validate_plains_pick, plains_first_picks,
     apply_tower,
     apply_cave,
@@ -26,8 +26,8 @@ def _plains_state(layout, turn="human", valid_moves=None):
 # 3A — Plains
 # ===========================================================================
 class TestPlainsFirstPicks:
-    def test_four_picks_on_open_board(self):
-        # Plains at (2,2), surrounded by Forest
+    def test_all_manhattan2_picks_on_open_board(self):
+        # Plains at (2,2), surrounded by Forest — expects all 12 Manhattan ≤ 2 tiles
         state = make_state(
             [["F","F","F","F","F"],
              ["F","F","F","F","F"],
@@ -36,7 +36,12 @@ class TestPlainsFirstPicks:
              ["F","F","F","F","F"]],
         )
         picks = plains_first_picks(state, 2, 2)
-        assert sorted(picks) == sorted([[0,2],[2,0],[2,4],[4,2]])
+        expected = [
+            [1,2],[3,2],[2,1],[2,3],          # cardinal distance 1
+            [0,2],[4,2],[2,0],[2,4],          # cardinal distance 2
+            [1,1],[1,3],[3,1],[3,3],          # diagonals (Manhattan distance 2)
+        ]
+        assert sorted(picks) == sorted(expected)
 
     def test_picks_skip_mountains(self):
         state = make_state(
@@ -68,9 +73,8 @@ class TestPlainsFirstPicks:
              ["F","F","F"]],
         )
         picks = plains_first_picks(state, 0, 0)
-        # Only two cardinal neighbours at distance 2 exist: (0,2) and (2,0)
-        assert len(picks) == 2
-        assert sorted(picks) == sorted([[0,2],[2,0]])
+        # Manhattan ≤ 2 from (0,0) that are on-board: (0,1),(1,0),(0,2),(2,0),(1,1)
+        assert sorted(picks) == sorted([[0,1],[1,0],[0,2],[2,0],[1,1]])
 
 
 class TestApplyPlains:
@@ -104,12 +108,12 @@ class TestApplyPlains:
         assert state.turn == "human"   # still human's turn
 
     def test_no_valid_first_picks_advances_turn(self):
-        # Plains tile completely surrounded by mountains at distance 2
+        # Plains tile with all Manhattan ≤ 2 neighbours being mountains
         state = make_state(
             [["M","M","M","M","M"],
-             ["M","F","F","F","M"],
-             ["M","F","P","F","M"],
-             ["M","F","F","F","M"],
+             ["M","M","M","M","M"],
+             ["M","M","P","M","M"],
+             ["M","M","M","M","M"],
              ["M","M","M","M","M"]],
             turn="human",
             valid_moves={"human": [[2,2]], "ai": []},
@@ -142,18 +146,11 @@ class TestPlainsFirstPickApplication:
         apply_plains_first_pick(state, r, c)
         assert state.tile(r, c)["owner"] == "human"
 
-    def test_first_pick_sets_second_phase(self):
+    def test_first_pick_clears_phase(self):
         state = self._setup()
         r, c  = state.data["phase_data"]["valid_picks"][0]
         apply_plains_first_pick(state, r, c)
-        assert state.data["phase"] == "plains_second_pick"
-
-    def test_second_picks_are_adjacent_to_first(self):
-        state = self._setup()
-        r, c  = state.data["phase_data"]["valid_picks"][0]
-        apply_plains_first_pick(state, r, c)
-        for nr, nc in state.data["phase_data"]["valid_picks"]:
-            assert abs(nr - r) + abs(nc - c) == 1
+        assert state.data["phase"] is None
 
     def test_score_increments_on_first_pick(self):
         state = self._setup()
@@ -163,44 +160,9 @@ class TestPlainsFirstPickApplication:
         assert state.scores["human"] == before + 1
 
 
-class TestPlainsSecondPickApplication:
-    def _setup(self):
-        state = make_state(
-            [["F","F","F","F","F"],
-             ["F","F","F","F","F"],
-             ["F","F","P","F","F"],
-             ["F","F","F","F","F"],
-             ["F","F","F","F","F"]],
-            turn="human",
-            valid_moves={"human": [[2,2]], "ai": []},
-        )
-        apply_move(state, 2, 2)
-        r, c = state.data["phase_data"]["valid_picks"][0]
-        apply_plains_first_pick(state, r, c)
-        return state
-
-    def test_second_pick_claims_tile(self):
-        state = self._setup()
-        r, c  = state.data["phase_data"]["valid_picks"][0]
-        apply_plains_second_pick(state, r, c)
-        assert state.tile(r, c)["owner"] == "human"
-
-    def test_second_pick_clears_phase(self):
-        state = self._setup()
-        r, c  = state.data["phase_data"]["valid_picks"][0]
-        apply_plains_second_pick(state, r, c)
-        assert state.data["phase"] is None
-
-    def test_turn_advances_after_second_pick(self):
-        state = self._setup()
-        # Give AI a valid move so turn-skip doesn't bounce straight back to human
-        state.data["valid_moves"]["ai"] = [[4, 4]]
-        r, c  = state.data["phase_data"]["valid_picks"][0]
-        apply_plains_second_pick(state, r, c)
-        assert state.turn == "ai"
-
+class TestPlainsFullMove:
     def test_total_score_after_full_plains_move(self):
-        """Plains tile + 2 bonus picks = 3 new tiles claimed."""
+        """Plains tile + 1 bonus pick = 2 new tiles claimed."""
         state = make_state(
             [["F","F","F","F","F"],
              ["F","F","F","F","F"],
@@ -212,14 +174,28 @@ class TestPlainsSecondPickApplication:
         )
         before = state.scores["human"]
         apply_move(state, 2, 2)
-        r1, c1 = state.data["phase_data"]["valid_picks"][0]
-        apply_plains_first_pick(state, r1, c1)
-        r2, c2 = state.data["phase_data"]["valid_picks"][0]
-        apply_plains_second_pick(state, r2, c2)
-        assert state.scores["human"] == before + 3
+        r, c = state.data["phase_data"]["valid_picks"][0]
+        apply_plains_first_pick(state, r, c)
+        assert state.scores["human"] == before + 2
+
+    def test_turn_advances_after_bonus_pick(self):
+        state = make_state(
+            [["F","F","F","F","F"],
+             ["F","F","F","F","F"],
+             ["F","F","P","F","F"],
+             ["F","F","F","F","F"],
+             ["F","F","F","F","F"]],
+            turn="human",
+            valid_moves={"human": [[2,2]], "ai": []},
+        )
+        state.data["valid_moves"]["ai"] = [[4, 4]]
+        apply_move(state, 2, 2)
+        r, c = state.data["phase_data"]["valid_picks"][0]
+        apply_plains_first_pick(state, r, c)
+        assert state.turn == "ai"
 
     def test_plains_within_plains_no_nested_phase(self):
-        """First pick being a Plains tile must NOT start a nested Plains phase."""
+        """Bonus pick landing on a Plains tile must NOT start another Plains phase."""
         state = make_state(
             [["F","F","P","F","F"],
              ["F","F","F","F","F"],
@@ -230,10 +206,10 @@ class TestPlainsSecondPickApplication:
             valid_moves={"human": [[2,2]], "ai": []},
         )
         apply_move(state, 2, 2)  # Plains at (2,2)
-        # First pick at (0,2) which is also a Plains tile
+        # Bonus pick at (0,2) which is also a Plains tile
         apply_plains_first_pick(state, 0, 2)
-        # Phase should be plains_second_pick, NOT plains_first_pick again
-        assert state.data["phase"] == "plains_second_pick"
+        # Phase must be cleared, not restarted
+        assert state.data["phase"] is None
 
 
 class TestPlainsValidation:
@@ -530,13 +506,13 @@ class TestWizard:
         ok, _ = validate_wizard_teleport(state, 0, 2)
         assert ok is False
 
-    def test_wizard_tile_always_visible_at_game_start(self, client):
-        """The Wizard tile is always visible in the API response."""
+    def test_wizard_tile_hidden_by_fog_at_game_start(self, client):
+        """The Wizard tile is subject to fog of war like all other tiles."""
         resp  = client.post("/game/new", json={"seed": 3})
         board = resp.get_json()["board"]
         wizards = [t for row in board for t in row if t["type"] == "wizard"]
         assert len(wizards) == 1
-        assert wizards[0]["visible"] is True
+        assert wizards[0]["visible"] is False
 
     def test_wizard_teleport_via_api(self, client):
         resp = client.post("/game/new", json={"seed": 42})

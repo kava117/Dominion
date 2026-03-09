@@ -184,7 +184,6 @@ def compute_visible(state: "GameState") -> set[tuple[int, int]]:
 
     A tile is visible if:
     - It is claimed (owner is not None)
-    - It is the Wizard tile (always visible regardless of fog)
     - It is a Mountain (fixed terrain, always shown)
     - It is in either player's valid moves pool
     - It has been explicitly Tower-revealed (revealed_extra)
@@ -194,7 +193,7 @@ def compute_visible(state: "GameState") -> set[tuple[int, int]]:
     for r in range(state.height):
         for c in range(state.width):
             tile = state.tile(r, c)
-            if tile["owner"] is not None or tile["type"] in ("wizard", "mountain"):
+            if tile["owner"] is not None or tile["type"] == "mountain":
                 visible.add((r, c))
 
     for player_pool in state.valid_moves.values():

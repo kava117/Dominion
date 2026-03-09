@@ -110,10 +110,8 @@ def generate_board(
                 tile = _make_tile(T_MOUNTAIN, visible=True)
             elif pos in specials:
                 info      = specials[pos]
-                is_wizard = (info["type"] == T_WIZARD)
                 tile = _make_tile(
                     info["type"],
-                    visible=is_wizard,  # Wizard always visible; others start fogged
                     special_state=info["special_state"],
                 )
             else:

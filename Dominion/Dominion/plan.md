@@ -78,11 +78,9 @@ Implement all six special tile types and their effects on game state. This is th
 ### What to Build (one sub-section per tile type)
 
 #### 3A — Plains
-- On claim: collect valid tiles at exactly Manhattan distance 2, one per cardinal axis (up to 4 tiles)
-- Player picks **first tile** from those; that tile is claimed
-- Player then picks **second tile** cardinally adjacent to the first pick
-- Both claimed in one turn; if < 2 picks exist, claim as many as available
-- State tracks "plains_pending" phase with first-pick candidates
+- On claim: collect all unclaimed non-Mountain tiles within Manhattan distance 1–2 (includes cardinals at distance 1 and 2, and diagonals at distance 2)
+- Player picks **one tile** from those candidates; that tile is claimed
+- State tracks "plains_first_pick" phase with valid pick candidates
 
 #### 3B — Tower
 - On claim: lift fog for all tiles within Manhattan distance ≤ 3 (all tiles reachable in ≤ 3 steps)
@@ -97,7 +95,7 @@ Implement all six special tile types and their effects on game state. This is th
 - Inert/connected Caves do not appear as Cave destinations
 
 #### 3D — Wizard
-- Wizard tile is always visible (not obscured by fog) — flag in board generation
+- Wizard tile is subject to fog of war like all other tiles
 - On claim: set `wizard_held_by` to claiming player
 - On a future turn, player may teleport to any unclaimed, non-Mountain tile as their move
 - After teleport: `wizard_held_by = null`; Wizard tile marked as used (`wizard_used` state)
@@ -113,10 +111,10 @@ Implement all six special tile types and their effects on game state. This is th
   - Update both players' valid moves pools and fog state after the sweep
 
 ### Tests (must all pass before Stage 4)
-- **Plains**: correct 2-step flow; edge case with < 2 available picks; state machine transitions correct
+- **Plains**: correct single-pick flow; edge case with no available picks; state machine transitions correct
 - **Tower**: exactly 4 cardinal-axis valid moves added (or fewer at edges); fog revealed for all tiles within distance 3; Barbarian in Tower's fog zone triggers correctly
 - **Cave**: connection made when next move is a Cave; connection NOT made when next move is something else; inert Caves excluded from valid moves pool
-- **Wizard**: tile always visible on initial board; `wizard_held_by` set on claim; teleport move is legal to any unclaimed non-Mountain tile; consumed after use
+- **Wizard**: tile hidden by fog on initial board; `wizard_held_by` set on claim; teleport move is legal to any unclaimed non-Mountain tile; consumed after use
 - **Barbarian**: fires on entering valid moves pool; fires on Tower reveal at distance < 3; correct row/column swept; Barbarian tile becomes Forest afterwards; both players' pools updated after sweep
 - **Integration**: a single game exercising all tile types in sequence without state corruption
 
@@ -147,7 +145,7 @@ Wire the full turn pipeline into the `/move` endpoint. This stage makes the game
 - Dominant end triggers when > 50% owned and opponent pool is empty
 - Tie correctly detected
 - Turn advances to opponent after a normal move
-- Turn stays with current player during Plains sub-phase (first pick → second pick)
+- Turn stays with current player during Plains sub-phase (one bonus pick)
 - Turn stays if pending Cave connection (player chose Cave and next pick should confirm connection or not)
 - Turn skip when active player has no valid moves
 - Wizard teleport move flows through correctly
@@ -169,7 +167,7 @@ Implement the minimax AI with alpha-beta pruning and expose it via the `/ai-move
 - `game/ai/minimax.py`: minimax with alpha-beta pruning
   - Difficulty → search depth: Easy = 2, Medium = 4, Hard = 6
   - Move ordering: special tiles first (Wizard > Tower > Cave > Plains > Forest/Domain), then moves that expand the pool most
-  - Plains handling: enumerate all valid (first-pick, second-pick) pairs as a single compound node
+  - Plains handling: enumerate all valid picks (Manhattan distance 1–2) as a single compound node
   - Wizard handling: evaluate wizard teleport as an alternative move on any AI turn
   - Return best move(s) to apply
 - `POST /game/{id}/ai-move` endpoint: runs minimax, applies result, returns updated state
@@ -177,7 +175,7 @@ Implement the minimax AI with alpha-beta pruning and expose it via the `/ai-move
 ### Tests (must all pass before Stage 6)
 - AI always returns a move that is in the valid moves pool (no illegal AI moves)
 - Easy AI has shallower search than Hard (verify depth limit is respected)
-- AI correctly handles Plains compound move (both picks applied in one turn)
+- AI correctly handles Plains bonus pick (single pick applied in one turn)
 - AI correctly uses Wizard teleport when it holds the ability
 - Heuristic returns higher score when AI has more tiles
 - Alpha-beta produces the same result as unoptimized minimax (correctness check on small boards)
@@ -205,7 +203,7 @@ Bootstrap the React app and render the game board with placeholder colors. The f
 - Submitting setup screen calls `POST /game/new` and renders the board
 - All tile types render with their correct placeholder color
 - Fog tiles render as dark overlay
-- Wizard tile is always visible (not fogged) even on initial board
+- Wizard tile is hidden by fog of war like all other tiles
 - Board scales correctly for a 12×10 default board and a 24×20 large board
 
 ---
@@ -244,12 +242,10 @@ Make the game fully playable from the browser. Human clicks tiles, AI takes its 
 Implement the multi-step interaction flows for Plains, Cave, and Wizard. These require temporary UI state machines on the frontend.
 
 ### What to Build
-- **Plains two-step selection**:
-  - After claiming a Plains tile, backend returns state with `phase: "plains_first_pick"` and valid moves = the distance-2 cardinal candidates
-  - UI prompts "Select your first bonus tile" with those tiles highlighted
-  - After first pick: backend returns `phase: "plains_second_pick"` with valid moves = cardinal neighbors of first pick
-  - UI prompts "Select your second bonus tile"
-  - After second pick: normal turn advance
+- **Plains bonus pick**:
+  - After claiming a Plains tile, backend returns state with `phase: "plains_first_pick"` and valid moves = all unclaimed non-Mountain tiles within Manhattan distance 1–2
+  - UI prompts "Select your bonus tile" with those tiles highlighted
+  - After pick: normal turn advance
 - **Cave selection**:
   - After claiming a Cave, if other unclaimed Caves exist, they are highlighted as valid moves alongside normal moves
   - UI does not force Cave selection — player may choose any valid move next turn
@@ -264,8 +260,7 @@ Implement the multi-step interaction flows for Plains, Cave, and Wizard. These r
   - Briefly flash the affected tiles before settling on the new state (CSS transition or brief highlight)
 
 ### Tests (must all pass before Stage 9)
-- Plains: after claiming Plains, UI shows only distance-2 cardinal tiles as valid picks
-- Plains: after first pick, UI shows only cardinal neighbors of that tile
+- Plains: after claiming Plains, UI shows all unclaimed non-Mountain tiles within Manhattan distance 1–2 as valid picks
 - Cave: Cave destinations highlighted alongside normal valid moves after Cave claim
 - Wizard button appears only when human holds the ability; disappears after use
 - Wizard mode highlights all unclaimed non-Mountain tiles
@@ -291,7 +286,7 @@ Verify the full system works correctly end-to-end across all game paths. Fix rou
 - **Barbarian trigger via Tower**: set up a board where a Tower reveal exposes a Barbarian within distance < 3; verify Barbarian fires immediately on Tower claim
 - **Wizard used by AI**: verify AI correctly uses Wizard teleport and it cannot be used again
 - **Cave chain**: claim a Cave, then claim another Cave; verify both become inert and subsequent moves no longer list them as Cave destinations
-- **Plains edge case**: claim a Plains tile on the board edge where < 2 bonus tiles exist; verify only available tiles are claimed
+- **Plains edge case**: claim a Plains tile on the board edge where no bonus tiles exist; verify turn advances normally with no pick phase
 - **Seed reproducibility**: start two games with the same seed and config; verify identical board layouts and identical AI move sequences
 - **Large board performance**: 24×20 board on Hard difficulty; AI move must complete within the time cap
 - **UI error path**: send a malformed move to the backend; verify the frontend displays an error and the game remains playable
