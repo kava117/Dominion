@@ -12,8 +12,8 @@ One player is a human; the other is an AI opponent driven by the **minimax algor
 
 | Layer | Technology |
 |---|---|
-| Frontend | React (pixel-art styled UI) |
-| Backend | Python (FastAPI or Flask) |
+| Frontend | HTML |
+| Backend | Python (Flask) |
 | AI Engine | Python (minimax + alpha-beta pruning) |
 | State | Backend-authoritative; frontend is a thin client |
 | Communication | REST API (JSON) |
@@ -22,32 +22,7 @@ One player is a human; the other is an AI opponent driven by the **minimax algor
 
 ## 3. Project Structure
 
-```
-/
-├── backend/
-│   ├── main.py               # API entry point
-│   ├── game/
-│   │   ├── board.py          # Board generation, tile logic
-│   │   ├── rules.py          # Valid move computation
-│   │   ├── state.py          # Game state model
-│   │   └── ai/
-│   │       ├── minimax.py    # Minimax + alpha-beta
-│   │       └── heuristic.py  # Scoring/evaluation functions
-│   └── seed.py               # Seeded RNG for board generation
-│
-└── frontend/
-    ├── src/
-    │   ├── components/
-    │   │   ├── Board.jsx         # Grid renderer
-    │   │   ├── Tile.jsx          # Individual tile renderer
-    │   │   ├── HUD.jsx           # Score, turn indicator, controls
-    │   │   └── FogOverlay.jsx    # Fog of War overlay
-    │   ├── assets/
-    │   │   └── tiles/            # Pixel art assets (see Section 10)
-    │   ├── App.jsx
-    │   └── api.js                # Backend API calls
-    └── public/
-```
+
 
 ---
 
@@ -85,38 +60,34 @@ The same seed always produces the same board.
 |---|---|---|
 | Domain | Yes | Same as Forest (cardinal adjacency) |
 | Forest | Yes | Adds cardinally adjacent tiles to valid moves |
-| Plains | Yes | Grants a 2-step move (see 5.4) |
+| Plains | Yes | Adds tiles <= manhattan distance 2 to valid moves (see 5.4) |
 | Tower | Yes | Reveals tiles within 3 moves; only allows moves at exactly distance 3 |
 | Cave | Yes | Teleports to any other unclaimed Cave; connected Caves go inert |
 | Mountain | **No** | Impassable; never claimable; excluded from tile count |
 | Wizard | Yes | One-time teleport to any unclaimed tile on the board |
-| Barbarians | Yes (after charge) | Charges across entire board row/column on reveal, unclaiming all tiles in path |
+| Barbarians | No (Tile type removed after activation) | Charges across row/column on reveal, unclaiming all tiles in path |
 
 ### 5.2 Forest & Domain
-When a player claims a Forest or Domain tile, all **cardinally adjacent** tiles (up, down, left, right) that are not Mountains are added to that player's **valid moves pool** if not already claimed.
+Forests & Domains add cardinally adjacent tiles (manhattan distance 1) to the valid moves list
 
 ### 5.3 Tower
-When a player claims a Tower tile:
-- **Fog of War is lifted** for all tiles within a Manhattan distance of 3 from the Tower (i.e., all tiles reachable in up to 3 cardinal steps), revealing their types.
+- **Fog of War is lifted** for all tiles within a Manhattan distance of 3 from the Tower (moves must move away from the tower itself)
 - **Valid moves added**: Only tiles at **exactly Manhattan distance 3** from the Tower are added to the valid moves pool. Tiles at distances 1 and 2 are revealed but not added as valid moves by the Tower itself (they may still be valid from other claimed tiles).
-- Paths to distance-3 tiles must follow cardinal directions away from the Tower (no backtracking).
 
 ### 5.4 Plains
-When a player claims a Plains tile:
 - **Fog of War is lifted** for all tiles within a Manhattan distance of 2 from the Plains (i.e., all tiles reachable in up to 2 cardinal steps), revealing their types.
-- **Valid moves added**: Only tiles at **of at least Manhattan distance 2** from the Plains are added to the valid moves pool.
+- **Valid moves added**: Tiles at **of at most Manhattan distance 2** from the Plains are added to the valid moves pool.
 
 ### 5.5 Cave
-- When a player claims a Cave tile, all **other unclaimed Cave tiles** on the board are added to their valid moves pool.
-- If the player then uses their next move to claim one of those Caves, the two Caves become **connected**:
+- Adds all **other unclaimed Cave tiles** on the board to their valid moves pool.
+- If the player claims a cave tile, and that cave tile is only included in the valid moves pool because of a cave, those two caves are linked, and both become inert (Cave identifier is still visible, but do not offer the cave connection ability)
   - Both Caves are now claimed by this player and count toward their score.
   - Both Caves lose their special ability and are treated as ordinary claimed tiles (no longer add other Caves to valid moves).
-- If a Cave is claimed but the player does not subsequently claim another Cave (e.g., they claim a different tile instead), the Cave connection is not made, and the Cave retains its ability for future turns.
 - Already-connected Caves do not appear in any player's valid moves pool as Cave destinations.
 
 ### 5.6 Wizard
-- The Wizard tile appears **once** on the board and is visible through Fog of War (not obscured).
-- When a player claims the Wizard tile, they immediately receive a **one-time-use teleport ability**.
+- The Wizard tile appears **once** on the board
+- When a player claims the Wizard tile, they have access to a **one-time-use teleport ability**.
 - On any future turn, instead of making a normal move, the player may activate the Wizard ability to **teleport to any unclaimed, non-Mountain tile** on the board and claim it.
 - After the teleport is used, the Wizard ability is consumed and cannot be used again. The Wizard tile itself remains claimed by that player.
 - If the Wizard tile is never claimed, neither player gets the ability.
@@ -128,7 +99,7 @@ When a player claims a Plains tile:
   2. The Barbarians charge across the **entire row or column** in that direction from their starting position, unclaiming every tile they pass through (regardless of which player owns it, and including Mountains — Mountains are passed through but remain unclaimed and unclaimable).
   3. All unclaimed tiles left in the Barbarians' wake become open and can be reclaimed by either player on future turns.
   4. After charging, the Barbarian tile itself is removed from the board and the tiles it occupied become standard claimable tiles (Forest).
-- Multiple Barbarian groups on the board each trigger independently when revealed.
+- Multiple Barbarian tiles on the board each trigger independently when revealed.
 - A row/column may be hit more than once if multiple Barbarian groups are assigned to it.
 
 ---
@@ -143,10 +114,10 @@ Each player maintains a **valid moves pool** — a set of tile coordinates they 
 - Every move that is added to the valid moves list also tracks what tile type generated it. When a tile is claimed on a players turn, the tile is validated based on the tile that generated it. i.e. if a Cave tile is added to the valid moves list by another Cave, and that new Cave is claimed on the next turn, then the claimed Cave determines it was only valid via a Cave, and both Caves are considered connected. However, if that Cave is also valid by a forest or other non-single-use tile, than the permanent tile takes priority and the existing Cave is not used up
 
 ### 6.2 Fog of War
-- All tiles not in either player's valid moves pool (and not already claimed) are **obscured by Fog of War**.
-- The frontend renders fogged tiles as obscured (darkened placeholder sprite). Their tile type is not revealed until fog is lifted.
-- Fog is lifted from a tile when it enters a player's valid moves pool or is claimed.
-- The Tower tile lifts fog for all tiles within Manhattan distance 3 upon being claimed (see 5.3).
+- All tiles not in either player's valid moves pool, not already claimed, and not explicitly revealed by tiles are **obscured by Fog of War**.
+- The frontend renders fogged tiles as obscured (fog asset). Their tile type is not revealed until fog is lifted.
+- Fog is lifted from a tile when it enters a player's valid moves pool or is claimed, or is revealed explicitly
+- The Tower tile lifts fog for all tiles within Manhattan distance 3 upon being claimed
 
 ---
 
@@ -155,12 +126,12 @@ Each player maintains a **valid moves pool** — a set of tile coordinates they 
 1. The **current player's valid moves** are highlighted on the board.
 2. The player selects one valid tile to claim.
 3. The backend processes the move:
-   - Marks the tile as claimed by this player.
+   - Verify which tile made this move a "valid move"
+   - If the move ONLY originates from a single-use tile, use up that tile
    - Updates both players' valid move pools.
    - Checks for Barbarian reveals.
    - Checks win conditions.
-4. Special tile effects are resolved (Plains bonus move, Cave connection prompt, Wizard activation, Barbarian charge).
-5. Turn passes to the other player.
+4. Turn passes to the other player.
 
 **Turn order**: Human player goes first. Configurable at game start.
 
@@ -190,18 +161,16 @@ The board evaluation function scores a game state from the AI's perspective. Sug
 - **Tile count delta**: AI claimed tiles minus human claimed tiles.
 - **Valid moves delta**: Size of AI valid moves pool minus human valid moves pool (territory potential).
 - **Special tile proximity**: Bonus for having high-value tiles (Wizard, Tower, Cave) in or near the valid moves pool.
-- **Barbarian threat**: Penalty if a Barbarian is close to being revealed (within the AI's visible area) and would harm the AI's tiles.
 - **Cave connectivity bonus**: Bonus for having Caves that are connected (locked in, scoring normally).
+- The AI does NOT know what tiles are currently hidden by the fog of war. It may use minimum tile information (i.e. the fact that there is at least 1 barbarian) to make decisions, but it should not avoid barbarians in the fog of war
 
 ### 9.3 Move Ordering
 To improve alpha-beta pruning efficiency, moves should be ordered before evaluation:
 1. Moves that claim special tiles first (Wizard > Tower > Cave > Plains > Forest/Domain).
 2. Moves that expand the valid moves pool the most.
 
-### 9.4 Plains Handling in Minimax
-Because Plains triggers a 2-step move, the AI must evaluate the Plains turn as a **compound action** (first pick + second pick) in a single minimax node, enumerating all valid (first pick, second pick) pairs.
 
-### 9.5 Wizard Handling in Minimax
+### 9.4 Wizard Handling in Minimax
 The AI must track whether it holds the Wizard ability and evaluate using it as an alternative to a normal move on any given turn.
 
 ---
@@ -211,7 +180,7 @@ The AI must track whether it holds the Wizard ability and evaluate using it as a
 ### 10.1 Structure
 All tile sprites are stored in:
 ```
-frontend/src/assets/tiles/
+frontend/assets
 ```
 
 Each tile type has the following sprite variants as PNG files:
@@ -258,12 +227,6 @@ Until final art is provided, the frontend should render **colored placeholder ti
 | Fog of War | `#1a1a2e` |
 | Valid move highlight | Semi-transparent `#ffffff` at 30% opacity |
 
-### 10.3 Swapping Assets
-The `Tile.jsx` component should reference sprites by a **logical tile key** (e.g., `"forest_player"`) resolved through a central `assetMap.js` file. To swap in real pixel art, only `assetMap.js` needs to be updated — no component logic changes required.
-
-```
-frontend/src/assets/assetMap.js   ← single source of truth for all sprite paths
-```
 
 ### 10.4 Tile Render Size
 Tiles should be rendered at **32×32px** by default, scaling with board size to fit the viewport. Support for a 16×16px compact mode for larger boards.
@@ -293,8 +256,6 @@ Tiles should be rendered at **32×32px** by default, scaling with board size to 
 - Valid move tiles are highlighted with the `valid_move` overlay.
 - Clicking a highlighted tile submits the move to the backend.
 - During the AI's turn, the board is non-interactive. A visual indicator shows the AI is "thinking."
-- Plains bonus move: after the Plains tile is claimed, the UI enters a two-step selection mode, prompting the player to pick their first then second bonus tile.
-- Cave selection: after claiming a Cave, if other unclaimed Caves exist, the valid moves highlights update to show Cave destinations. The player may choose a Cave or any other valid move on their next turn.
 
 ---
 
