@@ -22,45 +22,51 @@ from game.rules import (
 # Plains
 # ---------------------------------------------------------------------------
 
-def plains_first_picks(state: "GameState", row: int, col: int) -> list[list[int]]:
+def plains_picks(state: "GameState", row: int, col: int) -> list[list[int]]:
     """Compute valid pick candidates for a Plains tile at (row, col).
 
-    Any unclaimed non-Mountain tile within Manhattan distance 1-2 is valid.
-    Diagonals (Manhattan distance 2) are included since they cost 2 moves.
+    Any unclaimed non-Mountain tile at Manhattan distance >= 2 is valid (spec §5.4).
     """
     picks = []
-    for dr in range(-2, 3):
-        for dc in range(-2, 3):
-            if dr == 0 and dc == 0:
-                continue
-            if abs(dr) + abs(dc) > 2:
-                continue
-            nr, nc = row + dr, col + dc
-            if 0 <= nr < state.height and 0 <= nc < state.width:
-                t = state.tile(nr, nc)
+    for r in range(state.height):
+        for c in range(state.width):
+            if abs(r - row) + abs(c - col) >= 2:
+                t = state.tile(r, c)
                 if t["owner"] is None and t["type"] != "mountain":
-                    picks.append([nr, nc])
+                    picks.append([r, c])
     return picks
 
 
 def apply_plains(state: "GameState", row: int, col: int, _player: str) -> None:
-    """Enter the Plains bonus-move flow (or skip it if no picks exist)."""
-    first_picks = plains_first_picks(state, row, col)
+    """Reveal fog within distance <= 2; enter Plains bonus-move flow at distance >= 2."""
+    # Fog reveal for all tiles within Manhattan distance <= 2 (spec §5.4)
+    revealed_extra: list = state.data.setdefault("revealed_extra", [])
+    revealed_set = {(p[0], p[1]) for p in revealed_extra}
+    newly_revealed: list[tuple[int, int]] = []
+    for r in range(state.height):
+        for c in range(state.width):
+            if abs(r - row) + abs(c - col) <= 2:
+                if (r, c) not in revealed_set:
+                    revealed_extra.append([r, c])
+                    revealed_set.add((r, c))
+                    newly_revealed.append((r, c))
+    check_barbarian_visibility(state, newly_revealed)
 
-    if not first_picks:
+    picks = plains_picks(state, row, col)
+    if not picks:
         # No bonus tiles available — turn advances normally (caller handles this)
         return
 
-    state.data["phase"] = "plains_first_pick"
+    state.data["phase"] = "plains_pick"
     state.data["phase_data"] = {
         "plains_pos":  [row, col],
-        "valid_picks": first_picks,
+        "valid_picks": picks,
     }
     # Turn does NOT advance yet — set a sentinel so apply_move knows to skip it
     state.data["_plains_pending"] = True
 
 
-def apply_plains_first_pick(state: "GameState", row: int, col: int) -> None:
+def apply_plains_pick(state: "GameState", row: int, col: int) -> None:
     """Claim the Plains bonus tile and end the Plains phase."""
     from game.rules import _claim_tile
 
@@ -80,6 +86,8 @@ def _end_plains(state: "GameState") -> None:
 
 
 def validate_plains_pick(state: "GameState", row: int, col: int) -> tuple[bool, str]:
+    if state.data.get("phase") != "plains_pick":
+        return False, "Not in Plains pick phase"
     valid_picks = state.data.get("phase_data", {}).get("valid_picks", [])
     if [row, col] not in valid_picks:
         return False, "Not a valid Plains bonus pick"
@@ -96,8 +104,8 @@ def validate_plains_pick(state: "GameState", row: int, col: int) -> tuple[bool, 
 # ---------------------------------------------------------------------------
 
 def apply_tower(state: "GameState", row: int, col: int, player: str) -> None:
-    """Reveal fog within Manhattan distance ≤ 3; add 4 cardinal-axis distance-3
-    tiles to the valid moves pool.  Trigger any Barbarians newly revealed.
+    """Reveal fog within Manhattan distance ≤ 3; add all tiles at exactly distance 3
+    to the valid moves pool (spec §5.3).  Trigger any Barbarians newly revealed.
     """
     revealed_extra: list = state.data.setdefault("revealed_extra", [])
     revealed_set   = {(p[0], p[1]) for p in revealed_extra}
@@ -111,18 +119,18 @@ def apply_tower(state: "GameState", row: int, col: int, player: str) -> None:
                     revealed_set.add((r, c))
                     newly_revealed.append((r, c))
 
-    # Valid moves: only the 4 cardinal-axis tiles at exactly distance 3
+    # Valid moves: all unclaimed non-Mountain tiles at exactly Manhattan distance 3
     pool     = state.data["valid_moves"][player]
     pool_set = _pool_as_set(pool)
-    for dr, dc in CARDINAL_DELTAS:
-        nr, nc = row + dr * 3, col + dc * 3
-        if 0 <= nr < state.height and 0 <= nc < state.width:
-            t = state.tile(nr, nc)
-            if t["owner"] is None and t["type"] != "mountain":
-                key = (nr, nc)
-                if key not in pool_set:
-                    pool_set.add(key)
-                    pool.append([nr, nc])
+    for r in range(state.height):
+        for c in range(state.width):
+            if abs(r - row) + abs(c - col) == 3:
+                t = state.tile(r, c)
+                if t["owner"] is None and t["type"] != "mountain":
+                    key = (r, c)
+                    if key not in pool_set:
+                        pool_set.add(key)
+                        pool.append([r, c])
 
     # Barbarian reveal check for all newly visible tiles
     check_barbarian_visibility(state, newly_revealed)
@@ -229,10 +237,11 @@ def check_barbarian_visibility(
 
 def _trigger_barbarian(state: "GameState", barb_r: int, barb_c: int) -> None:
     """Sweep the Barbarian's row or column, unclaiming every non-Mountain tile.
+    Direction chosen at trigger time: whichever axis is longest (spec §5.7).
     Replace the Barbarian tile with Forest afterwards and recompute pools.
     """
     tile      = state.tile(barb_r, barb_c)
-    direction = tile["special_state"]["direction"]
+    direction = "horizontal" if state.width >= state.height else "vertical"
     tile["special_state"]["triggered"] = True
 
     positions = (
@@ -292,15 +301,15 @@ def recompute_pools(state: "GameState") -> None:
                             new_pools[owner].append([nr, nc])
 
             elif tile_type == "tower":
-                for dr, dc in CARDINAL_DELTAS:
-                    nr, nc = r + dr * 3, c + dc * 3
-                    if 0 <= nr < state.height and 0 <= nc < state.width:
-                        nb = state.tile(nr, nc)
-                        if nb["owner"] is None and nb["type"] != "mountain":
-                            key = (nr, nc)
-                            if key not in pool_sets[owner]:
-                                pool_sets[owner].add(key)
-                                new_pools[owner].append([nr, nc])
+                for r2 in range(state.height):
+                    for c2 in range(state.width):
+                        if abs(r2 - r) + abs(c2 - c) == 3:
+                            nb = state.tile(r2, c2)
+                            if nb["owner"] is None and nb["type"] != "mountain":
+                                key = (r2, c2)
+                                if key not in pool_sets[owner]:
+                                    pool_sets[owner].add(key)
+                                    new_pools[owner].append([r2, c2])
 
             elif tile_type == "cave":
                 # All claimed caves expand to cardinal neighbors (like forest)

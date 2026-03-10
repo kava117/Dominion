@@ -89,9 +89,9 @@ def generate_board(
     # Wizard (RNG: no extra calls)
     place(T_WIZARD, 1, lambda: {"used": False})
 
-    # Barbarians (RNG call per group: choice for direction)
+    # Barbarians — direction is chosen at trigger time (longest path), not seeded here
     def barb_state():
-        return {"direction": rng.choice(["horizontal", "vertical"]), "triggered": False}
+        return {"triggered": False}
 
     actual_barbarians = place(T_BARBARIAN, counts["barbarian"], barb_state)
 
@@ -112,6 +112,7 @@ def generate_board(
                 info      = specials[pos]
                 tile = _make_tile(
                     info["type"],
+                    visible=(info["type"] == T_WIZARD),  # Wizard always visible per spec §5.6
                     special_state=info["special_state"],
                 )
             else:

@@ -98,8 +98,8 @@ class GameState:
         board_with_visibility = self._apply_visibility()
         current_player = self._data["turn"]
 
-        # During Plains sub-moves return the phase-specific picks, not the full pool
-        if self.phase in ("plains_first_pick", "plains_second_pick"):
+        # During Plains sub-move return the phase-specific picks, not the full pool
+        if self.phase == "plains_pick":
             vm = self.phase_data.get("valid_picks", [])
         else:
             vm = self._data["valid_moves"].get(current_player, [])
@@ -170,7 +170,7 @@ def create_game(
         "status":                "in_progress",
         "scores":                scores,
         "valid_moves":           valid_moves,
-        "revealed_extra":        [],   # positions fog-revealed by Tower at distance < 3
+        "revealed_extra":        [],   # positions fog-revealed by Tower (≤ 3) or Plains (≤ 2)
         "wizard_held_by":        None,
         "phase":                 None,
         "phase_data":            {},

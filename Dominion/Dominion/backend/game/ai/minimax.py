@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 from game.ai.heuristic import evaluate
 from game.rules import apply_move, cardinal_neighbors, CARDINAL_DELTAS
 from game.effects import (
-    apply_plains_first_pick,
+    apply_plains_pick,
     apply_wizard_teleport,
 )
 
@@ -85,8 +85,8 @@ def apply_ai_move(state: "GameState", move: dict) -> None:
 
     elif move["type"] == "plains":
         apply_move(state, move["row"], move["col"])
-        if move.get("first") is not None and state.data.get("phase") == "plains_first_pick":
-            apply_plains_first_pick(state, move["first"][0], move["first"][1])
+        if move.get("first") is not None and state.data.get("phase") == "plains_pick":
+            apply_plains_pick(state, move["first"][0], move["first"][1])
 
 
 def get_all_moves(state: "GameState") -> list[dict]:
@@ -206,7 +206,7 @@ def _enumerate_plains(state: "GameState", pr: int, pc: int) -> list[dict]:
     sim1 = _clone(state)
     apply_move(sim1, pr, pc)
 
-    if sim1.data.get("phase") != "plains_first_pick":
+    if sim1.data.get("phase") != "plains_pick":
         # Plains ended immediately (no picks available)
         return [{"type": "plains", "row": pr, "col": pc, "first": None, "tile_type": "plains"}]
 
@@ -264,7 +264,7 @@ def _simulate(state: "GameState", move: dict) -> "GameState":
 
     elif move["type"] == "plains":
         apply_move(sim, move["row"], move["col"])
-        if move.get("first") is not None and sim.data.get("phase") == "plains_first_pick":
-            apply_plains_first_pick(sim, move["first"][0], move["first"][1])
+        if move.get("first") is not None and sim.data.get("phase") == "plains_pick":
+            apply_plains_pick(sim, move["first"][0], move["first"][1])
 
     return sim

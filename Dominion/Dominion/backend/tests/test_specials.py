@@ -2,8 +2,8 @@
 import pytest
 from game.rules import apply_move, remove_from_pools, compute_visible
 from game.effects import (
-    apply_plains, apply_plains_first_pick,
-    validate_plains_pick, plains_first_picks,
+    apply_plains, apply_plains_pick,
+    validate_plains_pick, plains_picks,
     apply_tower,
     apply_cave,
     apply_wizard, apply_wizard_teleport, validate_wizard_teleport,
@@ -26,8 +26,9 @@ def _plains_state(layout, turn="human", valid_moves=None):
 # 3A — Plains
 # ===========================================================================
 class TestPlainsFirstPicks:
-    def test_all_manhattan2_picks_on_open_board(self):
-        # Plains at (2,2), surrounded by Forest — expects all 12 Manhattan ≤ 2 tiles
+    def test_all_distance_ge2_picks_on_open_board(self):
+        # Plains at (2,2) on 5×5 — expects all tiles at Manhattan distance >= 2
+        # (excludes the Plains tile itself at distance 0, and 4 cardinal neighbors at distance 1)
         state = make_state(
             [["F","F","F","F","F"],
              ["F","F","F","F","F"],
@@ -35,12 +36,10 @@ class TestPlainsFirstPicks:
              ["F","F","F","F","F"],
              ["F","F","F","F","F"]],
         )
-        picks = plains_first_picks(state, 2, 2)
-        expected = [
-            [1,2],[3,2],[2,1],[2,3],          # cardinal distance 1
-            [0,2],[4,2],[2,0],[2,4],          # cardinal distance 2
-            [1,1],[1,3],[3,1],[3,3],          # diagonals (Manhattan distance 2)
-        ]
+        picks = plains_picks(state, 2, 2)
+        # All 25 tiles except (2,2) itself (plains, distance 0) and 4 cardinal neighbors (distance 1)
+        excluded = {(2,2), (1,2), (3,2), (2,1), (2,3)}
+        expected = [[r, c] for r in range(5) for c in range(5) if (r, c) not in excluded]
         assert sorted(picks) == sorted(expected)
 
     def test_picks_skip_mountains(self):
@@ -51,9 +50,9 @@ class TestPlainsFirstPicks:
              ["F","F","F","F","F"],
              ["F","F","F","F","F"]],
         )
-        picks = plains_first_picks(state, 2, 2)
-        assert [0,2] not in picks   # mountain at (0,2)
-        assert [2,0] not in picks   # mountain at (2,0)
+        picks = plains_picks(state, 2, 2)
+        assert [0,2] not in picks   # mountain at (0,2) — distance 2, but excluded
+        assert [2,0] not in picks   # mountain at (2,0) — distance 2, but excluded
 
     def test_picks_skip_owned_tiles(self):
         state = make_state(
@@ -63,8 +62,8 @@ class TestPlainsFirstPicks:
              ["F","F","F","F","F"],
              ["F","F","F","F","F"]],
         )
-        picks = plains_first_picks(state, 2, 2)
-        assert [0,2] not in picks   # owned by AI
+        picks = plains_picks(state, 2, 2)
+        assert [0,2] not in picks   # owned by AI — distance 2, but excluded
 
     def test_edge_board_fewer_picks(self):
         state = make_state(
@@ -72,13 +71,14 @@ class TestPlainsFirstPicks:
              ["F","F","F"],
              ["F","F","F"]],
         )
-        picks = plains_first_picks(state, 0, 0)
-        # Manhattan ≤ 2 from (0,0) that are on-board: (0,1),(1,0),(0,2),(2,0),(1,1)
-        assert sorted(picks) == sorted([[0,1],[1,0],[0,2],[2,0],[1,1]])
+        picks = plains_picks(state, 0, 0)
+        # Distance >= 2 from (0,0) on 3×3: (0,2),(1,1),(1,2),(2,0),(2,1),(2,2)
+        # Excludes (0,0) itself (distance 0) and (0,1),(1,0) (distance 1)
+        assert sorted(picks) == sorted([[0,2],[1,1],[1,2],[2,0],[2,1],[2,2]])
 
 
 class TestApplyPlains:
-    def test_sets_plains_first_pick_phase(self):
+    def test_sets_plains_pick_phase(self):
         state = make_state(
             [["F","F","F","F","F"],
              ["F","F","F","F","F"],
@@ -91,7 +91,7 @@ class TestApplyPlains:
         # Mark (2,2) as plains for effect
         state.data["board"][2][2]["type"] = "plains"
         apply_move(state, 2, 2)
-        assert state.data["phase"] == "plains_first_pick"
+        assert state.data["phase"] == "plains_pick"
         assert len(state.data["phase_data"]["valid_picks"]) > 0
 
     def test_turn_does_not_advance_during_plains(self):
@@ -143,20 +143,20 @@ class TestPlainsFirstPickApplication:
         state = self._setup()
         picks = state.data["phase_data"]["valid_picks"]
         r, c  = picks[0]
-        apply_plains_first_pick(state, r, c)
+        apply_plains_pick(state, r, c)
         assert state.tile(r, c)["owner"] == "human"
 
     def test_first_pick_clears_phase(self):
         state = self._setup()
         r, c  = state.data["phase_data"]["valid_picks"][0]
-        apply_plains_first_pick(state, r, c)
+        apply_plains_pick(state, r, c)
         assert state.data["phase"] is None
 
     def test_score_increments_on_first_pick(self):
         state = self._setup()
         before = state.scores["human"]
         r, c   = state.data["phase_data"]["valid_picks"][0]
-        apply_plains_first_pick(state, r, c)
+        apply_plains_pick(state, r, c)
         assert state.scores["human"] == before + 1
 
 
@@ -175,7 +175,7 @@ class TestPlainsFullMove:
         before = state.scores["human"]
         apply_move(state, 2, 2)
         r, c = state.data["phase_data"]["valid_picks"][0]
-        apply_plains_first_pick(state, r, c)
+        apply_plains_pick(state, r, c)
         assert state.scores["human"] == before + 2
 
     def test_turn_advances_after_bonus_pick(self):
@@ -191,7 +191,7 @@ class TestPlainsFullMove:
         state.data["valid_moves"]["ai"] = [[4, 4]]
         apply_move(state, 2, 2)
         r, c = state.data["phase_data"]["valid_picks"][0]
-        apply_plains_first_pick(state, r, c)
+        apply_plains_pick(state, r, c)
         assert state.turn == "ai"
 
     def test_plains_within_plains_no_nested_phase(self):
@@ -207,7 +207,7 @@ class TestPlainsFullMove:
         )
         apply_move(state, 2, 2)  # Plains at (2,2)
         # Bonus pick at (0,2) which is also a Plains tile
-        apply_plains_first_pick(state, 0, 2)
+        apply_plains_pick(state, 0, 2)
         # Phase must be cleared, not restarted
         assert state.data["phase"] is None
 
@@ -215,14 +215,14 @@ class TestPlainsFullMove:
 class TestPlainsValidation:
     def test_invalid_pick_returns_false(self):
         state = make_state([["F","F","F"]], valid_moves={"human":[],"ai":[]})
-        state.data["phase"] = "plains_first_pick"
+        state.data["phase"] = "plains_pick"
         state.data["phase_data"] = {"valid_picks": [[0,1]]}
         ok, _ = validate_plains_pick(state, 0, 2)
         assert ok is False
 
     def test_valid_pick_returns_true(self):
         state = make_state([["F","F","F"]], valid_moves={"human":[],"ai":[]})
-        state.data["phase"] = "plains_first_pick"
+        state.data["phase"] = "plains_pick"
         state.data["phase_data"] = {"valid_picks": [[0,1]]}
         ok, _ = validate_plains_pick(state, 0, 1)
         assert ok is True
@@ -248,7 +248,7 @@ class TestPlainsAPI:
         resp2 = client.post(f"/game/{gid}/move", json={"row": r, "col": c})
         data2 = resp2.get_json()
         assert resp2.status_code == 200
-        assert data2["phase"] == "plains_first_pick"
+        assert data2["phase"] == "plains_pick"
         # valid_moves in response shows the first-pick candidates, not full pool
         assert len(data2["valid_moves"]) >= 0   # may be 0 if all at distance 2 are blocked
 
@@ -264,8 +264,8 @@ class TestPlainsAPI:
         database.save_game(raw)
 
         client.post(f"/game/{gid}/move", json={"row": r, "col": c})
-        # Submit a row/col that is NOT in the valid_picks
-        bad = client.post(f"/game/{gid}/move", json={"row": 0, "col": 0})
+        # Submit the Plains tile itself (already claimed, distance 0 < 2, NOT in valid_picks)
+        bad = client.post(f"/game/{gid}/move", json={"row": r, "col": c})
         assert bad.status_code == 400
 
 
@@ -281,14 +281,23 @@ class TestTower:
         state.data["board"][3][3]["type"] = "tower"
         return state
 
-    def test_four_cardinal_distance3_tiles_added_to_pool(self):
+    def test_all_distance3_tiles_added_to_pool(self):
+        # All tiles at exactly Manhattan distance 3 from Tower at (3,3) on 7×7
         state = self._tower_state()
         apply_tower(state, 3, 3, "human")
         vm = state.data["valid_moves"]["human"]
+        # Cardinal tiles at distance 3
         assert [0, 3] in vm   # 3 up
         assert [6, 3] in vm   # 3 down
         assert [3, 0] in vm   # 3 left
         assert [3, 6] in vm   # 3 right
+        # Non-cardinal tiles at distance 3 (e.g., 2 steps one axis + 1 step other)
+        assert [1, 2] in vm   # |1-3|+|2-3| = 2+1 = 3
+        assert [1, 4] in vm   # |1-3|+|4-3| = 2+1 = 3
+        assert [5, 2] in vm   # |5-3|+|2-3| = 2+1 = 3
+        assert [5, 4] in vm   # |5-3|+|4-3| = 2+1 = 3
+        assert [2, 1] in vm   # |2-3|+|1-3| = 1+2 = 3
+        assert [4, 5] in vm   # |4-3|+|5-3| = 1+2 = 3
 
     def test_fog_revealed_within_distance_3(self):
         state = self._tower_state()
@@ -506,13 +515,13 @@ class TestWizard:
         ok, _ = validate_wizard_teleport(state, 0, 2)
         assert ok is False
 
-    def test_wizard_tile_hidden_by_fog_at_game_start(self, client):
-        """The Wizard tile is subject to fog of war like all other tiles."""
+    def test_wizard_tile_always_visible_at_game_start(self, client):
+        """The Wizard tile is always visible (not obscured by Fog of War) per spec §5.6."""
         resp  = client.post("/game/new", json={"seed": 3})
         board = resp.get_json()["board"]
         wizards = [t for row in board for t in row if t["type"] == "wizard"]
         assert len(wizards) == 1
-        assert wizards[0]["visible"] is False
+        assert wizards[0]["visible"] is True
 
     def test_wizard_teleport_via_api(self, client):
         resp = client.post("/game/new", json={"seed": 42})
@@ -569,12 +578,13 @@ class TestBarbarian:
             assert state.tile(2, c)["owner"] is None
 
     def test_vertical_sweep_unclaims_entire_column(self):
-        state = self._barb_state("vertical", barb_r=2, barb_c=2)
-        state.data["board"][0][2]["owner"] = "human"
+        # Use height > width so direction chosen is vertical (spec §5.7: longest axis)
+        state = self._barb_state("vertical", barb_r=3, barb_c=1, width=3, height=7)
+        state.data["board"][0][1]["owner"] = "human"
         state.data["scores"]["human"] = 1
-        _trigger_barbarian(state, 2, 2)
-        for r in range(5):
-            assert state.tile(r, 2)["owner"] is None
+        _trigger_barbarian(state, 3, 1)
+        for r in range(7):
+            assert state.tile(r, 1)["owner"] is None
 
     def test_barbarian_tile_becomes_forest(self):
         state = self._barb_state("horizontal", barb_r=2)
@@ -686,19 +696,37 @@ class TestIntegration:
         import database
         raw = database.load_game(gid)
         raw["wizard_held_by"] = "human"
-        # Place a Tower somewhere unclaimed and set it as teleport target
-        raw["board"][5][5]["type"]          = "tower"
-        raw["board"][5][5]["owner"]         = None
-        raw["board"][5][5]["special_state"] = {}
+
+        # Find a tile far from all Barbarians so the Tower claim won't trigger one and
+        # unclaim the tile before we can check ownership.
+        barb_positions = [
+            (r, c)
+            for r in range(raw["height"]) for c in range(raw["width"])
+            if raw["board"][r][c]["type"] == "barbarian"
+        ]
+        tower_r = tower_c = None
+        for r in range(raw["height"]):
+            for c in range(raw["width"]):
+                tile = raw["board"][r][c]
+                if tile["owner"] is None and tile["type"] != "mountain":
+                    if all(abs(r - br) + abs(c - bc) > 3 for br, bc in barb_positions):
+                        tower_r, tower_c = r, c
+                        break
+            if tower_r is not None:
+                break
+
+        raw["board"][tower_r][tower_c]["type"]          = "tower"
+        raw["board"][tower_r][tower_c]["owner"]         = None
+        raw["board"][tower_r][tower_c]["special_state"] = {}
         database.save_game(raw)
 
         resp2 = client.post(f"/game/{gid}/move",
-                            json={"wizard": True, "row": 5, "col": 5})
+                            json={"wizard": True, "row": tower_r, "col": tower_c})
         assert resp2.status_code == 200
         data2 = resp2.get_json()
-        assert data2["board"][5][5]["owner"] == "human"
+        assert data2["board"][tower_r][tower_c]["owner"] == "human"
         assert data2["wizard_held_by"] is None
-        # Tower fog: revealed_extra should cover tiles within distance 3
+        # Tower fog: revealed_extra should cover the Tower tile itself
         raw2 = database.load_game(gid)
         revealed = {(p[0], p[1]) for p in raw2.get("revealed_extra", [])}
-        assert (5, 5) in revealed
+        assert (tower_r, tower_c) in revealed

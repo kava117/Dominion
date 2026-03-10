@@ -74,13 +74,14 @@ def evaluate(state: "GameState", ai_player: str) -> float:
             if t["type"] == "cave" and t["owner"] == ai_player and t["special_state"].get("inert"):
                 score += WEIGHT_CAVE_PAIR
 
-    # 6. Barbarian threat — penalise AI tiles in the sweep path of untriggered Barbarians
+    # 6. Barbarian threat — penalise AI tiles in the sweep path of untriggered Barbarians.
+    # Direction is chosen at trigger time (longest axis), so we estimate it the same way.
+    barb_direction = "horizontal" if state.width >= state.height else "vertical"
     for r in range(state.height):
         for c in range(state.width):
             t = state.tile(r, c)
             if t["type"] == "barbarian" and not t["special_state"].get("triggered"):
-                direction = t["special_state"]["direction"]
-                if direction == "horizontal":
+                if barb_direction == "horizontal":
                     ai_exposed = sum(
                         1 for sc in range(state.width)
                         if state.tile(r, sc)["owner"] == ai_player

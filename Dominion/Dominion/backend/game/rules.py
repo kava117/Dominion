@@ -193,7 +193,8 @@ def compute_visible(state: "GameState") -> set[tuple[int, int]]:
     for r in range(state.height):
         for c in range(state.width):
             tile = state.tile(r, c)
-            if tile["owner"] is not None or tile["type"] == "mountain":
+            # Mountains always visible; Wizard always visible per spec §5.6
+            if tile["owner"] is not None or tile["type"] in ("mountain", "wizard"):
                 visible.add((r, c))
 
     for player_pool in state.valid_moves.values():
@@ -202,5 +203,10 @@ def compute_visible(state: "GameState") -> set[tuple[int, int]]:
 
     for pos in state.data.get("revealed_extra", []):
         visible.add((pos[0], pos[1]))
+
+    # Plains valid picks are the player's valid moves during the plains phase
+    if state.phase == "plains_pick":
+        for pos in state.phase_data.get("valid_picks", []):
+            visible.add((pos[0], pos[1]))
 
     return visible

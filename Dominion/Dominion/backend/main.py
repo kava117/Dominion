@@ -6,7 +6,7 @@ from game.rules import validate_move, apply_move
 from game.ai.minimax import get_best_move, apply_ai_move
 from game.effects import (
     validate_plains_pick,
-    apply_plains_first_pick,
+    apply_plains_pick,
     validate_wizard_teleport,
     apply_wizard_teleport,
 )
@@ -135,11 +135,11 @@ def create_app(db_path: str | None = None) -> Flask:
                 abort(400, description=reason)
             apply_move(state, row, col)
 
-        elif phase == "plains_first_pick":
+        elif phase == "plains_pick":
             valid, reason = validate_plains_pick(state, row, col)
             if not valid:
                 abort(400, description=reason)
-            apply_plains_first_pick(state, row, col)
+            apply_plains_pick(state, row, col)
 
         else:
             abort(400, description=f"Unexpected game phase: {phase}")

@@ -126,13 +126,14 @@ class TestBarbarians:
         board, meta = generate_board(12, 10, seed=seed)
         assert meta["n_barbarians"] >= 1
 
-    def test_barbarians_have_valid_direction(self):
+    def test_barbarians_have_triggered_false(self):
+        # Direction is chosen at trigger time (spec §5.7), not seeded at board generation.
         for seed in range(10):
             board, _ = generate_board(12, 10, seed=seed)
             for row in board:
                 for tile in row:
                     if tile["type"] == T_BARBARIAN:
-                        assert tile["special_state"]["direction"] in ("horizontal", "vertical")
+                        assert "direction" not in tile["special_state"]
                         assert tile["special_state"]["triggered"] is False
 
 
