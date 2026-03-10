@@ -119,6 +119,11 @@ function buildTile(r, c, validSet, wizSet) {
     div.classList.add(`t-${tile.type}`);
   }
 
+  // Asset image — renders over the placeholder colour; ignored silently on 404
+  div.style.backgroundImage    = `url('${getAssetPath(tile)}')`;
+  div.style.backgroundSize     = '100% 100%';
+  div.style.backgroundRepeat   = 'no-repeat';
+
   // Tile type label — shown on claimed and visible unclaimed tiles
   if (tile.visible && tile.type !== 'mountain') {
     const lbl = document.createElement('span');
@@ -414,6 +419,47 @@ document.getElementById('play-again-btn').addEventListener('click', () => {
   gameId = state = null;
   wizardMode = false;
 });
+
+// ── Asset mapping ──────────────────────────────────────────────────────────
+// Returns the expected PNG path for a tile.  If the file doesn't exist the
+// browser silently ignores the background-image and the CSS colour shows through.
+function getAssetPath(tile) {
+  const { type, owner, inert, visible } = tile;
+
+  // Fogged tile
+  if (!visible && !owner) return 'assets/fog.png';
+
+  switch (type) {
+    case 'mountain':
+      return 'assets/mountain.png';
+
+    case 'barbarian':
+      return 'assets/barbarian.png';
+
+    case 'wizard': {
+      // Show wizard_used.png after the ability has been consumed
+      const used = owner && state.wizard_used[owner];
+      return used ? 'assets/wizard_used.png' : 'assets/wizard.png';
+    }
+
+    case 'cave':
+      if (owner) {
+        const side = owner === 'human' ? 'player' : 'ai';
+        return inert ? `assets/cave_inert_${side}.png` : `assets/cave_${side}.png`;
+      }
+      return 'assets/cave_neutral.png';
+
+    case 'domain':
+      // Domain tiles are always owned; no neutral variant in the spec
+      return `assets/domain_${owner === 'human' ? 'player' : 'ai'}.png`;
+
+    default:
+      // forest, plains, tower
+      if (owner === 'human') return `assets/${type}_player.png`;
+      if (owner === 'ai')    return `assets/${type}_ai.png`;
+      return `assets/${type}_neutral.png`;
+  }
+}
 
 // ── Utility ────────────────────────────────────────────────────────────────
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
