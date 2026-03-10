@@ -1,309 +1,362 @@
-# Domain Expansion — Development Plan
+# Domain Expansion — Implementation Plan
 
-## Clarifications & Design Decisions
+**Stack**: Python/Flask backend + Vanilla JS/HTML/CSS frontend. Flask serves both the API and static files. No npm, no build tools.
 
-The following decisions were made before planning:
-
-| Topic | Decision |
-|---|---|
-| Backend framework | Flask |
-| Game state storage | SQLite (persistent across restarts) |
-| Tower valid moves | All unclaimed non-Mountain tiles at exactly Manhattan distance 3 from the Tower (paths must follow cardinal directions away from the Tower with no backtracking) |
-| Barbarian trigger | On visibility — fires when it enters any player's visible area, including via Tower fog reveal at distance ≤ 3 |
-| Dominant win condition | Interpreted as: one player holds > 50% of claimable tiles AND the opponent has 0 valid moves remaining |
-| Cave retention | Once a Cave is claimed, unclaimed Caves remain in the valid moves pool on subsequent turns until a Cave connection is made or the game ends |
+Each stage must pass all its tests before proceeding to the next.
 
 ---
 
-## Stage 1 — Backend: Project Setup & Board Generation
+## Stage 1 — Project Scaffolding
 
-### Goal
-Stand up the Flask project skeleton and implement seeded, reproducible board generation. The board should be fully generated before any game logic runs.
+**Goal**: Flask app runs, serves a bare HTML page, and passes a health-check test.
 
-### What to Build
-- `backend/` directory with `main.py`, `game/board.py`, `game/state.py`, `seed.py`
-- SQLite model for persisting game state (a serialized board + metadata row per game)
-- Seeded RNG (`seed.py`) wrapping Python's `random.Random` with a fixed seed
-- Board generation in `board.py`:
-  - Place Mountains (10–20% of tiles, randomly seeded)
-  - Place special tiles: exactly 1 Wizard, 1–3 Barbarian groups, even number of Caves (min 2), Towers, Plains — quantities scaled with board size
-  - Fill remaining non-special tiles with Forest
-  - Place `domain_tiles_per_player` starting Domain tiles per player — not on Mountains or specials, not adjacent to each other
-- `POST /game/new` endpoint accepting `{ width, height, seed, difficulty, domain_tiles_per_player }` and returning initial game state JSON (Section 12 shape)
+### Backend
+1. Create `backend/requirements.txt`: `flask`, `flask-cors`, `pytest`
+2. Create `backend/game/__init__.py`, `backend/game/ai/__init__.py` (empty)
+3. Create `backend/main.py`:
+   - Flask app with `GET /ping` → `{"status": "ok"}`
+   - `GET /` serves `frontend/index.html`
+   - `Flask static_folder` points to `frontend/`
+4. Create `backend/pytest.ini` pointing test discovery at `backend/tests/`
+5. Create `backend/tests/__init__.py` and `backend/tests/conftest.py`
 
-### Tests (must all pass before Stage 2)
-- Same seed always produces the same board (idempotency test)
-- Mountain count is 10–20% of total tiles
-- Exactly 1 Wizard tile present
-- Cave count is even and >= 2
-- Starting Domain tiles are not on Mountains/specials and not adjacent to each other
-- Board dimensions match requested width/height
-- API: `POST /game/new` returns 200 with expected JSON fields
+### Frontend
+1. Create `frontend/index.html`: bare HTML shell with `<div id="app">` and script imports
+2. Create `frontend/style.css`: empty
+3. Create `frontend/js/api.js`, `board.js`, `hud.js`, `app.js`: empty stubs
+4. Create `frontend/js/assetMap.js`: empty export object
 
----
-
-## Stage 2 — Backend: Game State & Basic Valid Moves
-
-### Goal
-Implement the game state model and valid moves computation for Forest and Domain tiles. Fog of War state should be computed correctly from the valid moves pool.
-
-### What to Build
-- `game/state.py`: `GameState` class holding:
-  - Board grid (2D array of tile objects)
-  - Per-player: claimed tile set, valid moves pool, fog visibility set
-  - Turn indicator, scores, game status
-  - Wizard held-by tracker
-- Valid moves logic in `game/rules.py`:
-  - On claiming Forest or Domain: add all cardinally adjacent non-Mountain unclaimed tiles to that player's valid moves pool
-  - A tile in the valid moves pool is "visible" (fog lifted)
-  - When a tile is claimed, remove it from both players' valid moves pools
-- `GET /game/{id}` — return serialized game state
-- `GET /game/{id}/valid-moves` — return current valid moves for the active player
-
-### Tests (must all pass before Stage 3)
-- Claiming a Forest tile adds correct cardinal neighbors to valid moves pool
-- Claiming a Domain tile behaves identically to Forest
-- Claimed tiles are removed from both players' valid moves pools
-- Fog correctly obscures tiles not in any pool and not claimed
-- Starting Domain tiles seed the initial valid moves pools correctly
-- API: `GET /game/{id}` returns correct board and valid_moves after a Forest claim
+### Tests — Stage 1
+- `tests/test_api.py`: `GET /ping` returns 200 and `{"status": "ok"}`
+- `tests/test_api.py`: `GET /` returns 200 and HTML content
 
 ---
 
-## Stage 3 — Backend: Special Tile Logic
+## Stage 2 — Board Generation
 
-### Goal
-Implement all six special tile types and their effects on game state. This is the most complex backend stage — each tile type should be implemented and tested in isolation before integration.
+**Goal**: Backend generates a valid, seeded board with all tile types placed correctly.
 
-### What to Build (one sub-section per tile type)
+### Implementation
+1. **`backend/seed.py`**: wrap `random.Random(seed)` as a seedable RNG helper
+2. **`backend/game/board.py`**:
+   - `Tile` dataclass: `type`, `owner` (`None`/`"human"`/`"ai"`), `visible` (bool), `connected` (bool, for caves)
+   - `TILE_TYPES`: `forest`, `plains`, `tower`, `cave`, `mountain`, `wizard`, `barbarian`, `domain`
+   - `generate_board(width, height, seed, domain_tiles_per_player=2) -> list[list[Tile]]`:
+     1. Fill all tiles as `forest`
+     2. Place mountains: randomly pick 10–20% of tiles
+     3. Place special tiles scaled to board size:
+        - Wizard: exactly 1
+        - Barbarians: 1–3 groups (1 tile each)
+        - Caves: even number ≥ 2, scaled with board size
+        - Towers: scaled with board size
+        - Plains: scaled with board size
+     4. Remaining non-special, non-mountain tiles stay `forest`
+     5. Place starting Domain tiles: for each player, place `domain_tiles_per_player` tiles on non-mountain, non-special tiles, not adjacent to each other or the opposing player's domains; set `owner`
 
-#### 3A — Plains
-- On claim: collect all unclaimed non-Mountain tiles at Manhattan distance ≥ 2 from the Plains tile
-- Fog of War is lifted for all tiles within Manhattan distance ≤ 2 from the Plains
-- Player picks **one tile** from those candidates; that tile is claimed
-- State tracks "plains_pick" phase with valid pick candidates
-
-#### 3B — Tower
-- On claim: lift fog for all tiles within Manhattan distance ≤ 3 (all tiles reachable in ≤ 3 steps)
-- Add to valid moves pool: all unclaimed non-Mountain tiles at exactly Manhattan distance 3 from the Tower (paths must follow cardinal directions away from the Tower with no backtracking)
-- Check for Barbarian visibility trigger in newly revealed tiles (see 3E)
-
-#### 3C — Cave
-- On claim: add all other unclaimed (non-inert) Cave tiles to the claimant's valid moves pool
-- Track "last_cave_claimed_by" in state
-- If the claimant's next move is another Cave: mark both Caves as connected (inert), remove ability
-- If the claimant's next move is anything else: Cave retains ability; unclaimed Caves stay in pool
-- Inert/connected Caves do not appear as Cave destinations
-
-#### 3D — Wizard
-- Wizard tile is **always visible** on the board (not obscured by Fog of War)
-- On claim: set `wizard_held_by` to claiming player
-- On a future turn, player may teleport to any unclaimed, non-Mountain tile as their move
-- After teleport: `wizard_held_by = null`; Wizard tile marked as used (`wizard_used` state)
-- Track wizard-move intent separately from normal moves
-
-#### 3E — Barbarian
-- Trigger condition: Barbarian tile becomes visible (enters any player's visibility set)
-  - This includes being added to a valid moves pool AND being revealed by Tower fog at distance ≤ 3
-- On trigger:
-  - The Barbarian picks the direction (horizontal or vertical) with the longest path from its position
-  - Sweep that row or column: unclaim all tiles in path (restore to neutral Forest); Mountains are passed through but remain unclaimed and unclaimable
-  - Barbarian tile itself is replaced with a standard claimable Forest tile
-  - Update both players' valid moves pools and fog state after the sweep
-
-### Tests (must all pass before Stage 4)
-- **Plains**: correct single-pick flow; edge case with no available picks; state machine transitions correct
-- **Tower**: all tiles at exactly Manhattan distance 3 added as valid moves (fewer at board edges); fog revealed for all tiles within distance ≤ 3; Barbarian in Tower's fog zone triggers correctly
-- **Cave**: connection made when next move is a Cave; connection NOT made when next move is something else; inert Caves excluded from valid moves pool
-- **Wizard**: tile always visible on initial board (not obscured by fog); `wizard_held_by` set on claim; teleport move is legal to any unclaimed non-Mountain tile; consumed after use
-- **Barbarian**: fires on entering valid moves pool; fires on Tower reveal at distance ≤ 3; direction chosen as longest-path row or column at trigger time; correct row/column swept; Barbarian tile becomes Forest afterwards; both players' pools updated after sweep
-- **Integration**: a single game exercising all tile types in sequence without state corruption
+### Tests — Stage 2
+- `tests/test_board.py`:
+  - Same seed → identical board
+  - Mountain count is 10–20% of total tiles
+  - Exactly 1 Wizard tile
+  - Cave count is even and ≥ 2
+  - Domain tiles have correct owner, not on mountains/specials, not adjacent to each other
+  - Board dimensions match requested width/height
+  - All tile types are valid `TILE_TYPES`
 
 ---
 
-## Stage 4 — Backend: Turn Flow & Win Conditions
+## Stage 3 — Game State Model
 
-### Goal
-Wire the full turn pipeline into the `/move` endpoint. This stage makes the game playable end-to-end without a frontend.
+**Goal**: `GameState` encapsulates all mutable data and serializes to the API response shape.
 
-### What to Build
-- `POST /game/{id}/move` endpoint accepting `{ row, col }` (and optionally `{ wizard: true }` for wizard teleport)
-  1. Validate the move is in the current player's valid moves pool (or is a wizard teleport)
-  2. Claim the tile
-  3. Apply tile-type effects (resolving special tiles, updating pools, checking Barbarian triggers)
-  4. Check win conditions (see below)
-  5. If no special sub-phase pending (Plains, Cave prompt), advance turn to next player
-- Win condition checks in `game/rules.py`:
-  - **Standard end**: all claimable tiles claimed → game over, compare scores
-  - **Dominant end**: one player has > 50% of all claimable tiles AND opponent has 0 valid moves → that player wins
-  - Ties possible in standard end
-- Turn skipping: if the active player has 0 valid moves and the game has not ended, skip their turn (opponent plays again)
+### Implementation
+1. **`backend/game/state.py`**:
+   - `GameState` class:
+     - `game_id: str`
+     - `board: list[list[Tile]]`
+     - `width, height: int`
+     - `seed: int`
+     - `difficulty: str`
+     - `turn: str` (`"human"` or `"ai"`)
+     - `status: str` (`"in_progress"`, `"human_wins"`, `"ai_wins"`, `"draw"`)
+     - `scores: dict` (`{"human": int, "ai": int}`)
+     - `wizard_held_by: str | None`
+     - `wizard_used: bool`
+     - `valid_moves_human: dict[tuple, str]` — `{(row,col): source_type}`
+     - `valid_moves_ai: dict[tuple, str]`
+     - `pending_cave_human: tuple | None`
+     - `pending_cave_ai: tuple | None`
+     - `awaiting_plains: bool` — True when human claimed Plains and second move is pending
+   - `to_dict(perspective: str) -> dict`: serialize to API JSON shape; tiles not yet visible show `"type": "unknown"` from that player's perspective
+   - `new_game(config: dict) -> GameState`: calls `generate_board`, initializes all fields, computes initial valid moves
 
-### Tests (must all pass before Stage 5)
-- Valid move accepted; invalid move (not in pool) rejected with 400
-- Claiming a Mountain-position move rejected
-- Standard end triggers when all tiles claimed
-- Dominant end triggers when > 50% owned and opponent pool is empty
-- Tie correctly detected
-- Turn advances to opponent after a normal move
-- Turn stays with current player during Plains sub-phase (one bonus pick)
-- Turn stays if pending Cave connection (player chose Cave and next pick should confirm connection or not)
-- Turn skip when active player has no valid moves
-- Wizard teleport move flows through correctly
+2. **`backend/database.py`**: in-memory `GAMES: dict[str, GameState]` with `save(state)` and `load(game_id)`
 
----
-
-## Stage 5 — Backend: AI Engine
-
-### Goal
-Implement the minimax AI with alpha-beta pruning and expose it via the `/ai-move` endpoint.
-
-### What to Build
-- `game/ai/heuristic.py`: evaluation function
-  - Tile count delta (AI − human)
-  - Valid moves pool size delta (AI − human)
-  - Bonus for special tiles (Wizard > Tower > Cave > Plains) in or near AI pool
-  - Penalty if a Barbarian is in or near AI territory (would damage AI tiles)
-  - Bonus for connected Caves
-- `game/ai/minimax.py`: minimax with alpha-beta pruning
-  - Difficulty → search depth: Easy = 2, Medium = 4, Hard = 6
-  - Move ordering: special tiles first (Wizard > Tower > Cave > Plains > Forest/Domain), then moves that expand the pool most
-  - Plains handling: enumerate all valid picks (Manhattan distance ≥ 2) as a single compound node
-  - Wizard handling: evaluate wizard teleport as an alternative move on any AI turn
-  - Return best move(s) to apply
-- `POST /game/{id}/ai-move` endpoint: runs minimax, applies result, returns updated state
-
-### Tests (must all pass before Stage 6)
-- AI always returns a move that is in the valid moves pool (no illegal AI moves)
-- Easy AI has shallower search than Hard (verify depth limit is respected)
-- AI correctly handles Plains bonus pick (single pick applied in one turn)
-- AI correctly uses Wizard teleport when it holds the ability
-- Heuristic returns higher score when AI has more tiles
-- Alpha-beta produces the same result as unoptimized minimax (correctness check on small boards)
-- AI move endpoint returns updated game state in expected JSON shape
+### Tests — Stage 3
+- `tests/conftest.py`: fixture that creates a default `GameState`
+- `tests/test_api.py`:
+  - `new_game()` returns `GameState` with correct fields
+  - `to_dict("human")` matches the JSON shape from spec section 12
+  - Fogged tiles show `"type": "unknown"` from human perspective
 
 ---
 
-## Stage 6 — Frontend: Project Setup & Board Rendering
+## Stage 4 — Valid Moves Engine
 
-### Goal
-Bootstrap the React app and render the game board with placeholder colors. The frontend should be able to start a game and display the board without interactive moves yet.
+**Goal**: `rules.py` correctly computes valid moves for any game state.
 
-### What to Build
-- React project with Vite under `frontend/`
-- `src/assets/assetMap.js` — maps logical tile keys (e.g., `"forest_player"`) to placeholder colors (or PNG paths later)
-- `src/components/Tile.jsx` — renders a single tile using assetMap; accepts tile state as props
-- `src/components/Board.jsx` — renders the 2D grid of Tile components; scales to viewport
-- `src/components/FogOverlay.jsx` — renders the fog overlay on obscured tiles
-- `src/api.js` — wraps all fetch calls to the backend (`newGame`, `getState`, `getValidMoves`, `submitMove`, `triggerAiMove`)
-- Pre-game setup screen (`App.jsx` or `SetupScreen.jsx`):
-  - Width input (6–24), Height input (6–20), Seed input (optional), Difficulty selector, Start Game button
+### Implementation
+1. **`backend/game/rules.py`**:
+   - `compute_valid_moves(board, owned_tiles, all_claimed, pending_cave, wizard_available) -> dict[tuple, str]`
+     - Returns `{(row, col): source_type}` where `source_type` is the granting tile type
+     - Per tile type of each owned tile:
+       - `forest` / `domain`: cardinal neighbors that are unclaimed, non-mountain → source `"forest"`
+       - `plains`: unclaimed, non-mountain tiles at Manhattan distance ≥ 2 → source `"plains"`
+       - `tower`: unclaimed, non-mountain tiles at **exactly** Manhattan distance 3 → source `"tower"`
+       - `cave` (when `pending_cave` is set): all other unclaimed cave tiles → source `"cave"`
+     - Source priority: if a tile is reachable by a permanent type (forest/plains/tower) AND by cave, permanent wins
+   - `cardinal_neighbors(row, col, width, height) -> list[tuple]`
+   - `manhattan(a, b) -> int`
 
-### Tests (must all pass before Stage 7)
-- Setup screen form validates min/max for width and height
-- Submitting setup screen calls `POST /game/new` and renders the board
-- All tile types render with their correct placeholder color
-- Fog tiles render as dark overlay
-- Wizard tile is always visible on the board (not obscured by Fog of War)
-- Board scales correctly for a 12×10 default board and a 24×20 large board
+2. Wire into `GameState`: call `compute_valid_moves` for both players after every state change
 
----
-
-## Stage 7 — Frontend: Game Interaction & AI Turn
-
-### Goal
-Make the game fully playable from the browser. Human clicks tiles, AI takes its turn, HUD updates, game ends with a modal.
-
-### What to Build
-- Valid move highlighting — fetch `/game/{id}/valid-moves`, render `valid_move` overlay on those tiles
-- Click handler on Tile: only fires if tile is in valid moves pool; calls `POST /game/{id}/move`; re-fetches state
-- `src/components/HUD.jsx`:
-  - Current turn indicator (Human / AI)
-  - Score display (Human count vs AI count)
-  - Remaining claimable tiles count
-  - Wizard ability indicator (highlight if either player holds it)
-  - Seed display
-- AI turn flow:
-  - After human move, if status is still `in_progress` and turn is AI: board becomes non-interactive, show "AI is thinking..." indicator, call `POST /game/{id}/ai-move`, re-fetch state
-- End game modal: display winner, final scores, "Play Again" / "New Game" buttons
-
-### Tests (must all pass before Stage 8)
-- Clicking a non-highlighted tile does nothing
-- Clicking a highlighted tile sends the correct `{ row, col }` to the backend
-- HUD scores update after each move
-- AI "thinking" indicator appears and disappears correctly
-- End game modal displays correct winner text
-- "Play Again" restarts with the same seed; "New Game" returns to setup screen
+### Tests — Stage 4
+- `tests/test_moves.py`:
+  - Domain tile: all 4 cardinal neighbors (non-mountain, unclaimed) in valid moves
+  - Mountains never in valid moves
+  - Already-claimed tiles never in valid moves
+  - Plains: distance-1 tiles NOT added; distance ≥ 2 added
+  - Tower: only exact distance-3 tiles added
+  - Cave pending: unclaimed caves added with source `"cave"`; non-caves not added unless from other source
+  - Priority: cave tile also reachable by forest → source is `"forest"`, not `"cave"`
 
 ---
 
-## Stage 8 — Frontend: Special Tile UX
+## Stage 5 — Core API Endpoints
 
-### Goal
-Implement the multi-step interaction flows for Plains, Cave, and Wizard. These require temporary UI state machines on the frontend.
+**Goal**: All five API routes work and correctly mutate state.
 
-### What to Build
-- **Plains bonus pick**:
-  - After claiming a Plains tile, backend returns state with `phase: "plains_pick"` and valid moves = all unclaimed non-Mountain tiles at Manhattan distance ≥ 2 from the claimed Plains tile
-  - UI prompts "Select your bonus tile" with those tiles highlighted
-  - After pick: normal turn advance
-- **Cave selection**:
-  - After claiming a Cave, if other unclaimed Caves exist, they are highlighted as valid moves alongside normal moves
-  - UI does not force Cave selection — player may choose any valid move next turn
-  - No special prompt needed beyond the existing highlighting
-- **Wizard activation**:
-  - If human holds Wizard, show "Use Wizard" button in HUD
-  - Clicking it enters "wizard mode": all unclaimed non-Mountain tiles become highlighted
-  - Clicking one submits `POST /game/{id}/move` with `{ wizard: true, row, col }`
-  - Cancel button exits wizard mode without using the ability
-- **Barbarian charge visual**:
-  - When the AI or human triggers a Barbarian, the re-fetched state will show the swept row/column as unclaimed
-  - Briefly flash the affected tiles before settling on the new state (CSS transition or brief highlight)
+### Implementation
+1. **`backend/main.py`** — implement all routes:
+   - `POST /game/new` — parse config, call `new_game()`, save, return `to_dict("human")`
+   - `GET /game/<id>` — load, return `to_dict("human")`
+   - `GET /game/<id>/valid-moves` — return `{"valid_moves": [[r,c],...]}`
+   - `POST /game/<id>/move` — body: `{"row": r, "col": c}`:
+     1. Validate human's turn and `(r,c)` in `valid_moves_human`
+     2. Claim the tile; stub special effects (no-op for now)
+     3. Recompute valid moves for both players
+     4. Stub win check
+     5. Switch turn to `"ai"` (unless `awaiting_plains`)
+     6. Save and return updated state
+   - `POST /game/<id>/ai-move` — stub: pick a random valid AI move, apply it, switch turn to `"human"`, return state
+2. Enable CORS for local development
 
-### Tests (must all pass before Stage 9)
-- Plains: after claiming Plains, UI shows all unclaimed non-Mountain tiles at Manhattan distance ≥ 2 as valid picks
-- Cave: Cave destinations highlighted alongside normal valid moves after Cave claim
-- Wizard button appears only when human holds the ability; disappears after use
-- Wizard mode highlights all unclaimed non-Mountain tiles
-- Cancel wizard exits mode cleanly without submitting a move
-- Barbarian flash animation fires when swept tiles are detected in new state
+### Tests — Stage 5
+- `tests/test_api.py`:
+  - `POST /game/new` → 200, valid game state JSON
+  - `GET /game/<id>` → 200, same state
+  - `GET /game/<id>/valid-moves` → list of `[row, col]` pairs
+  - `POST /game/<id>/move` valid move → 200, tile claimed, turn = `"ai"`
+  - `POST /game/<id>/move` invalid coords → 400
+  - `POST /game/<id>/move` on AI's turn → 400
+  - `POST /game/<id>/ai-move` → 200, AI tile claimed, turn = `"human"`
 
 ---
 
-## Stage 9 — Integration, Polish & End-to-End Testing
+## Stage 6 — Win Conditions
 
-### Goal
-Verify the full system works correctly end-to-end across all game paths. Fix rough edges and validate edge cases.
+**Goal**: Game correctly detects all terminal states.
 
-### What to Build / Fix
-- AI thinking time cap: configurable timeout in minimax (default 5s for Hard); if exceeded, return best move found so far
-- Error handling: API errors surface as toast/banner in the UI rather than silent failures
-- Asset swap: confirm `assetMap.js` hot-swap works by replacing one placeholder with a real PNG without touching component logic
-- Seed sharing: seed displayed in HUD; copy-to-clipboard button
+### Implementation
+1. **`backend/game/win.py`**:
+   - `check_win(state: GameState) -> str | None`: returns `"human_wins"`, `"ai_wins"`, `"draw"`, or `None`
+   - **Standard end**: no unclaimed non-mountain tiles remain → compare scores
+   - **Dominant end**: one player's score > (total claimable / 2) AND opponent's valid moves pool is empty → that player wins
 
-### End-to-End Tests
-- **Full game — standard end**: play a complete game (using AI on Easy) until all tiles are claimed; verify winner is determined correctly
-- **Full game — dominant end**: construct a board state where one player reaches > 50% with no valid moves for opponent; verify dominant win fires
-- **Barbarian trigger via Tower**: set up a board where a Tower reveal exposes a Barbarian within distance ≤ 3; verify Barbarian fires immediately on Tower claim
-- **Wizard used by AI**: verify AI correctly uses Wizard teleport and it cannot be used again
-- **Cave chain**: claim a Cave, then claim another Cave; verify both become inert and subsequent moves no longer list them as Cave destinations
-- **Plains edge case**: claim a Plains tile on the board edge where no bonus tiles exist; verify turn advances normally with no pick phase
-- **Seed reproducibility**: start two games with the same seed and config; verify identical board layouts and identical AI move sequences
-- **Large board performance**: 24×20 board on Hard difficulty; AI move must complete within the time cap
-- **UI error path**: send a malformed move to the backend; verify the frontend displays an error and the game remains playable
+2. Call `check_win` after every move; set `state.status` if terminal
+
+### Tests — Stage 6
+- `tests/test_win_conditions.py`:
+  - All claimable tiles taken, human leads → `"human_wins"`
+  - All claimable tiles taken, equal → `"draw"`
+  - Human > 50% and AI has no moves → `"human_wins"` (dominant)
+  - Game in progress → `None`
+  - Mountains excluded from all counts
+  - API: move on a finished game → 400
 
 ---
 
-## Summary Timeline
+## Stage 7 — Special Tile Effects
 
-| Stage | Focus | Key Exit Criteria |
+**Goal**: All six special tile types apply correct effects when claimed.
+
+### Implementation
+Add `apply_tile_effect(state, player, row, col)` in `backend/game/effects.py`, called during move processing.
+
+#### 7a — Plains
+- Mark tiles within Manhattan distance ≤ 2 as `visible = True`
+- Do NOT switch turns after claiming; set `state.awaiting_plains = True`
+- Next move from same player is the Plains bonus move; after it, clear `awaiting_plains` and switch turns
+
+#### 7b — Tower
+- Mark all tiles within Manhattan distance ≤ 3 as `visible = True`
+- Add tiles at exactly distance 3 (non-mountain, unclaimed) to the player's valid moves
+
+#### 7c — Cave
+- Set `pending_cave_<player> = (row, col)`
+- Next move: if target is a Cave and `source_type == "cave"`, mark both caves `connected = True`, clear `pending_cave`; else just clear `pending_cave`
+- Connected caves never offered as cave destinations
+
+#### 7d — Wizard
+- Set `state.wizard_held_by = player`
+- API: if move body includes `"wizard_activate": true`, target may be any unclaimed non-mountain tile; after claiming, set `wizard_used = True`, clear `wizard_held_by`
+
+#### 7e — Barbarians
+- On any `visible = True` transition for a barbarian tile, trigger immediately:
+  1. Pick direction: longer axis (row vs column)
+  2. Uncllaim every tile in that full row or column (`owner = None`); mountains stay mountains
+  3. Replace barbarian tile with `type = "forest"`, `owner = None`
+  4. Recompute valid moves for both players
+
+#### 7f — Domain
+- Identical to Forest for move generation (cardinal adjacency)
+
+### Tests — Stage 7
+- `tests/test_specials.py`:
+  - **Plains**: visible tiles correct; `awaiting_plains` set; second move switches turns
+  - **Tower**: distance ≤ 3 tiles visible; only distance-3 in valid moves
+  - **Cave**: `pending_cave` set; next cave claim connects both; non-cave next move clears without connecting; connected caves excluded from destinations; forest-reachable cave not consumed
+  - **Wizard**: `wizard_held_by` set; activate claims any unclaimed tile; `wizard_used` set
+  - **Barbarians**: row/column unclaimed; barbarian becomes forest; mountains unaffected; freed tiles reclaimed after recompute
+- `tests/test_e2e.py`: play a full game via the API verifying state at each step
+
+---
+
+## Stage 8 — AI Engine
+
+**Goal**: AI selects moves via minimax with alpha-beta pruning.
+
+### Implementation
+1. **`backend/game/heuristic.py`** — `evaluate(state) -> float` (from AI perspective):
+   - `tile_delta`: AI score − human score
+   - `moves_delta`: AI valid moves count − human valid moves count
+   - `special_bonus`: +weight for Wizard/Tower/Cave in AI valid moves pool
+   - `barbarian_penalty`: penalty if barbarian visible and threatens AI tiles
+   - `cave_bonus`: bonus per connected Cave pair owned by AI
+   - Return weighted sum
+
+2. **`backend/game/ai/minimax.py`** — `minimax(state, depth, alpha, beta, maximizing) -> (score, move)`:
+   - Depth 0 or terminal: return `(evaluate(state), None)`
+   - Move ordering: Wizard > Tower > Cave > Plains > Forest/Domain; then by valid-moves expansion
+   - **Plains**: expand as compound node — enumerate all (first, second) move pairs in one minimax node
+   - **Wizard**: if `wizard_held_by == "ai"`, include wizard-activate as candidate
+   - Depth by difficulty: Easy=2, Medium=4, Hard=6
+
+3. Replace random stub in `ai-move` route with `minimax` call
+
+### Tests — Stage 8
+- `tests/test_ai.py`:
+  - AI always returns a valid move
+  - AI never picks an already-claimed tile
+  - AI picks a higher-value special tile when one is obviously available (depth ≥ 2)
+  - Plains: AI evaluates both moves in a single node
+  - Wizard: AI considers wizard activation in candidate list
+
+---
+
+## Stage 9 — Frontend
+
+**Goal**: Browser renders the full game: board, fog, valid move highlights, HUD, and end modal. Human interaction flows correctly through the API.
+
+### Implementation
+1. **`frontend/js/api.js`**: `fetch()` wrappers:
+   - `newGame(config)`, `getGame(id)`, `getValidMoves(id)`, `submitMove(id, row, col, wizardActivate)`, `triggerAiMove(id)`
+
+2. **`frontend/js/assetMap.js`**: map tile keys (e.g. `"forest_player"`) to placeholder CSS colors per spec section 10.2
+
+3. **`frontend/js/board.js`**:
+   - `renderBoard(boardData, validMoves, onTileClick, interactive)`: builds CSS grid of tile `<div>` elements
+   - Each div: background color from `assetMap`; semi-transparent white overlay if valid move; fog color if `!visible`
+   - Tile size: 32×32px; scales down for large boards
+
+4. **`frontend/js/hud.js`**: `updateHUD(state)`:
+   - Turn indicator, human/AI scores, remaining claimable tiles, wizard held-by, seed
+   - "AI is thinking…" indicator when `turn === "ai"`
+   - "Use Wizard" button when `wizard_held_by === "human"`
+
+5. **`frontend/index.html`**:
+   - `<div id="setup-screen">`: width, height, seed, difficulty inputs + Start button
+   - `<div id="game-screen">`: board container + HUD panel (hidden until game starts)
+   - `<div id="end-modal">`: winner text, scores, Play Again button (hidden until game ends)
+
+6. **`frontend/js/app.js`** — game loop:
+   - On Start: call `newGame()`, hide setup, show game, render board
+   - On tile click: call `submitMove()` → update board and HUD → if `turn === "ai"`, call `triggerAiMove()` → update again
+   - Plains two-step: if `awaiting_plains`, keep board interactive for one more click
+   - On `status !== "in_progress"`: show end modal
+   - Wizard mode: clicking "Use Wizard" enters target-selection mode; any unclaimed tile is clickable; submit with `wizardActivate=true`
+
+### Tests — Stage 9
+Manual browser smoke tests (no test framework needed):
+- Setup screen renders; Start button creates a game and shows the board
+- Board tile count matches width × height
+- Valid move tiles have the highlight overlay
+- Clicking a non-valid tile does nothing
+- Clicking a valid tile updates the board and shows AI turn indicator
+- AI turn completes and board updates
+- End modal appears with correct winner text
+- Play Again resets to setup screen
+
+---
+
+## Stage 10 — Polish & Integration
+
+**Goal**: Fully playable end-to-end with edge cases handled.
+
+### Implementation
+1. **`start.sh`**: `cd backend && flask run` (single command; Flask serves everything)
+2. Error handling: API errors surface as a visible alert banner in the UI
+3. AI thinking delay: disable board clicks during AI turn; re-enable on response
+4. Responsive board: CSS `calc` so tiles scale to fit viewport; compact 16×16 mode when board > 16 wide
+5. Barbarian visual: briefly flash freed tiles before re-render
+6. Cave UX: after claiming a cave, valid move highlights update to show cave destinations distinctly
+7. "Copy Seed" button in HUD copies seed to clipboard
+
+### Final Tests — Stage 10
+- `tests/test_e2e.py` (backend):
+  - Full game via API: new game → alternate human/AI moves until `status != "in_progress"`
+  - Final scores sum to total claimable tiles (accounting for any barbarian resets)
+  - Same seed → same board → same move sequence → same outcome
+- Browser: full play-through from setup to end modal without console errors
+
+---
+
+## Run Commands
+
+```bash
+# Install backend deps
+pip install -r backend/requirements.txt
+
+# Run backend (also serves frontend)
+cd backend && flask run
+
+# Run backend tests
+cd backend && pytest tests/ -v
+```
+
+---
+
+## Stage Checklist
+
+| Stage | Goal | Tests Pass |
 |---|---|---|
-| 1 | Board generation | Seeded board is reproducible; tile counts in spec |
-| 2 | Valid moves + fog | Forest/Domain adjacency correct; fog reflects pool |
-| 3 | Special tile logic | All 6 tile types tested in isolation |
-| 4 | Turn flow + win | Full turn pipeline; both win conditions fire |
-| 5 | AI engine | AI never makes illegal moves; alpha-beta matches minimax |
-| 6 | React board render | Board visible with correct placeholder colors |
-| 7 | Interactive game | Human can play a full game vs AI through the browser |
-| 8 | Special tile UX | Plains/Cave/Wizard flows all work in the UI |
-| 9 | Integration + E2E | Full game paths pass; performance acceptable |
+| 1 | Scaffolding & health check | [ ] |
+| 2 | Board generation | [ ] |
+| 3 | Game state model & serialization | [ ] |
+| 4 | Valid moves engine | [ ] |
+| 5 | Core API endpoints | [ ] |
+| 6 | Win conditions | [ ] |
+| 7 | Special tile effects | [ ] |
+| 8 | AI minimax engine | [ ] |
+| 9 | Frontend | [ ] |
+| 10 | Polish & full integration | [ ] |

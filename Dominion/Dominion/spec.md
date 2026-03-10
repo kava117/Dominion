@@ -12,11 +12,13 @@ One player is a human; the other is an AI opponent driven by the **minimax algor
 
 | Layer | Technology |
 |---|---|
-| Frontend | React (pixel-art styled UI) |
-| Backend | Python (FastAPI or Flask) |
+| Frontend | Vanilla JS + HTML/CSS (served by Flask) |
+| Backend | Python (Flask) |
 | AI Engine | Python (minimax + alpha-beta pruning) |
 | State | Backend-authoritative; frontend is a thin client |
 | Communication | REST API (JSON) |
+
+No build tools, no npm, no bundler. Flask serves both the API and all static files.
 
 ---
 
@@ -25,7 +27,7 @@ One player is a human; the other is an AI opponent driven by the **minimax algor
 ```
 /
 ├── backend/
-│   ├── main.py               # API entry point
+│   ├── main.py               # Flask app: API routes + serves index.html
 │   ├── game/
 │   │   ├── board.py          # Board generation, tile logic
 │   │   ├── rules.py          # Valid move computation
@@ -36,17 +38,15 @@ One player is a human; the other is an AI opponent driven by the **minimax algor
 │   └── seed.py               # Seeded RNG for board generation
 │
 └── frontend/
-    ├── src/
-    │   ├── components/
-    │   │   ├── Board.jsx         # Grid renderer
-    │   │   ├── Tile.jsx          # Individual tile renderer
-    │   │   ├── HUD.jsx           # Score, turn indicator, controls
-    │   │   └── FogOverlay.jsx    # Fog of War overlay
-    │   ├── assets/
-    │   │   └── tiles/            # Pixel art assets (see Section 10)
-    │   ├── App.jsx
-    │   └── api.js                # Backend API calls
-    └── public/
+    ├── index.html            # Single page shell
+    ├── style.css             # All styles
+    ├── js/
+    │   ├── api.js            # fetch() wrappers for backend API
+    │   ├── board.js          # Board/tile rendering
+    │   ├── hud.js            # HUD updates
+    │   └── app.js            # Game loop, state, event handling
+    └── assets/
+        └── tiles/            # Pixel art assets (see Section 10)
 ```
 
 ---
@@ -211,7 +211,7 @@ The AI must track whether it holds the Wizard ability and evaluate using it as a
 ### 10.1 Structure
 All tile sprites are stored in:
 ```
-frontend/src/assets/tiles/
+frontend/assets/tiles/
 ```
 
 Each tile type has the following sprite variants as PNG files:
@@ -259,10 +259,10 @@ Until final art is provided, the frontend should render **colored placeholder ti
 | Valid move highlight | Semi-transparent `#ffffff` at 30% opacity |
 
 ### 10.3 Swapping Assets
-The `Tile.jsx` component should reference sprites by a **logical tile key** (e.g., `"forest_player"`) resolved through a central `assetMap.js` file. To swap in real pixel art, only `assetMap.js` needs to be updated — no component logic changes required.
+The `board.js` module should reference sprites by a **logical tile key** (e.g., `"forest_player"`) resolved through a central `assetMap.js` file. To swap in real pixel art, only `assetMap.js` needs to be updated — no rendering logic changes required.
 
 ```
-frontend/src/assets/assetMap.js   ← single source of truth for all sprite paths
+frontend/js/assetMap.js   ← single source of truth for all sprite paths
 ```
 
 ### 10.4 Tile Render Size
