@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Domain Expansion</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- ── Setup screen ───────────────────────────────────────────── -->
+  <div id="setup-screen" class="screen">
+    <h1>Domain Expansion</h1>
+    <p class="subtitle">Claim territory. Outwit the AI. Expand your domain.</p>
+
+    <div class="form-group">
+      <label>Board Width <span class="hint">(6–24)</span>
+        <input id="cfg-width" type="number" value="12" min="6" max="24">
+      </label>
+      <label>Board Height <span class="hint">(6–20)</span>
+        <input id="cfg-height" type="number" value="10" min="6" max="20">
+      </label>
+      <label>Seed <span class="hint">(blank = random)</span>
+        <input id="cfg-seed" type="number" placeholder="random">
+      </label>
+      <label>Difficulty
+        <select id="cfg-difficulty">
+          <option value="easy">Easy</option>
+          <option value="medium" selected>Medium</option>
+          <option value="hard">Hard</option>
+        </select>
+      </label>
+    </div>
+
+    <button id="start-btn" class="btn btn-primary">Start Game</button>
+    <p id="setup-error" class="error hidden"></p>
+  </div>
+
+  <!-- ── Game screen ────────────────────────────────────────────── -->
+  <div id="game-screen" class="screen hidden">
+
+    <div id="hud">
+      <div id="hud-turn" class="hud-block">
+        <div id="turn-spinner" class="spinner hidden"></div>
+        <span id="turn-label">Your Turn</span>
+      </div>
+
+      <div class="hud-block">
+        <span class="hud-key">You</span>
+        <span id="score-human" class="score score-human">0</span>
+        <span class="hud-sep">vs</span>
+        <span id="score-ai" class="score score-ai">0</span>
+        <span class="hud-key">AI</span>
+      </div>
+
+      <div class="hud-block">
+        <span class="hud-key">Remaining</span>
+        <span id="remaining">—</span>
+      </div>
+
+      <div id="wizard-hud" class="hud-block hidden">
+        <span id="wizard-label"></span>
+        <button id="wizard-btn" class="btn btn-wizard hidden">Use Wizard</button>
+      </div>
+
+      <div class="hud-block">
+        <span class="hud-key">Seed</span>
+        <span id="seed-display">—</span>
+      </div>
+    </div>
+
+    <div id="board-wrap">
+      <div id="board"></div>
+    </div>
+
+    <div id="toast" class="hidden"></div>
+  </div>
+
+  <!-- ── End modal ──────────────────────────────────────────────── -->
+  <div id="end-modal" class="hidden">
+    <div id="end-content">
+      <h2 id="end-title"></h2>
+      <p id="end-score-line"></p>
+      <button id="play-again-btn" class="btn btn-primary">Play Again</button>
+    </div>
+  </div>
+
+  <script src="game.js"></script>
+</body>
+</html>
