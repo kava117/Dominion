@@ -102,11 +102,9 @@ When a player claims a Tower tile:
 - Paths to distance-3 tiles must follow cardinal directions away from the Tower (no backtracking).
 
 ### 5.4 Plains
-When a player claims a Plains tile, they immediately take a **bonus move** structured as follows:
-1. From the valid pool of tiles at **exactly Manhattan distance 2** from the Plains tile (up to 4 tiles — one in each cardinal direction, 2 steps away), the player selects one tile to claim (**first pick**).
-2. The player then selects a **second tile** that is cardinally adjacent to the first pick (their free choice of any valid unclaimed, non-Mountain neighbor).
-3. Both tiles are claimed as part of this single Plains turn. The Plains tile's turn ends after both picks are made.
-4. If fewer than 2 valid picks exist, the player claims as many as are available (1 or 0).
+When a player claims a Plains tile:
+- **Fog of War is lifted** for all tiles within a Manhattan distance of 2 from the Plains (i.e., all tiles reachable in up to 2 cardinal steps), revealing their types.
+- **Valid moves added**: Only tiles at **of at least Manhattan distance 2** from the Plains are added to the valid moves pool.
 
 ### 5.5 Cave
 - When a player claims a Cave tile, all **other unclaimed Cave tiles** on the board are added to their valid moves pool.
@@ -124,10 +122,10 @@ When a player claims a Plains tile, they immediately take a **bonus move** struc
 - If the Wizard tile is never claimed, neither player gets the ability.
 
 ### 5.7 Barbarians
-- Barbarian tiles appear as a group (a single entity) on the board and are **not claimable while active**.
+- Barbarian tiles appear on the board and are **not claimable while active**.
 - When a Barbarian tile is **revealed from the Fog of War** (i.e., it enters any player's visible area), it **instantly triggers**:
-  1. The Barbarians randomly choose a direction: **horizontal** (sweeping the entire row) or **vertical** (sweeping the entire column) — determined by seeded RNG at board generation time.
-  2. The Barbarians charge across the **entire row or column**, unclaiming every tile they pass through (regardless of which player owns it, and including Mountains — Mountains are passed through but remain unclaimed and unclaimable).
+  1. The Barbarians pick the direction with the longest path possible, either horizontal or vertical.
+  2. The Barbarians charge across the **entire row or column** in that direction from their starting position, unclaiming every tile they pass through (regardless of which player owns it, and including Mountains — Mountains are passed through but remain unclaimed and unclaimable).
   3. All unclaimed tiles left in the Barbarians' wake become open and can be reclaimed by either player on future turns.
   4. After charging, the Barbarian tile itself is removed from the board and the tiles it occupied become standard claimable tiles (Forest).
 - Multiple Barbarian groups on the board each trigger independently when revealed.
@@ -142,10 +140,10 @@ Each player maintains a **valid moves pool** — a set of tile coordinates they 
 
 - A tile can only be in the valid moves pool if it is **not already claimed** by either player and is **not a Mountain**.
 - When a tile is claimed, it is removed from both players' valid moves pools if present, and new tiles may be added based on the tile's type.
+- Every move that is added to the valid moves list also tracks what tile type generated it. When a tile is claimed on a players turn, the tile is validated based on the tile that generated it. i.e. if a Cave tile is added to the valid moves list by another Cave, and that new Cave is claimed on the next turn, then the claimed Cave determines it was only valid via a Cave, and both Caves are considered connected. However, if that Cave is also valid by a forest or other non-single-use tile, than the permanent tile takes priority and the existing Cave is not used up
 
 ### 6.2 Fog of War
 - All tiles not in either player's valid moves pool (and not already claimed) are **obscured by Fog of War**.
-- **Exception**: The **Wizard tile** is always visible, even through Fog of War.
 - The frontend renders fogged tiles as obscured (darkened placeholder sprite). Their tile type is not revealed until fog is lifted.
 - Fog is lifted from a tile when it enters a player's valid moves pool or is claimed.
 - The Tower tile lifts fog for all tiles within Manhattan distance 3 upon being claimed (see 5.3).
