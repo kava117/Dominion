@@ -8,8 +8,8 @@ The following decisions were made before planning:
 |---|---|
 | Backend framework | Flask |
 | Game state storage | SQLite (persistent across restarts) |
-| Tower valid moves | 4 tiles only — one per cardinal axis at exactly 3 steps (not full Manhattan distance 3) |
-| Barbarian trigger | On visibility — fires when it enters any player's visible area, including via Tower fog reveal at distance < 3 |
+| Tower valid moves | All unclaimed non-Mountain tiles at exactly Manhattan distance 3 from the Tower (paths must follow cardinal directions away from the Tower with no backtracking) |
+| Barbarian trigger | On visibility — fires when it enters any player's visible area, including via Tower fog reveal at distance ≤ 3 |
 | Dominant win condition | Interpreted as: one player holds > 50% of claimable tiles AND the opponent has 0 valid moves remaining |
 | Cave retention | Once a Cave is claimed, unclaimed Caves remain in the valid moves pool on subsequent turns until a Cave connection is made or the game ends |
 
@@ -78,13 +78,14 @@ Implement all six special tile types and their effects on game state. This is th
 ### What to Build (one sub-section per tile type)
 
 #### 3A — Plains
-- On claim: collect all unclaimed non-Mountain tiles within Manhattan distance 1–2 (includes cardinals at distance 1 and 2, and diagonals at distance 2)
+- On claim: collect all unclaimed non-Mountain tiles at Manhattan distance ≥ 2 from the Plains tile
+- Fog of War is lifted for all tiles within Manhattan distance ≤ 2 from the Plains
 - Player picks **one tile** from those candidates; that tile is claimed
-- State tracks "plains_first_pick" phase with valid pick candidates
+- State tracks "plains_pick" phase with valid pick candidates
 
 #### 3B — Tower
 - On claim: lift fog for all tiles within Manhattan distance ≤ 3 (all tiles reachable in ≤ 3 steps)
-- Add to valid moves pool: only the 4 cardinal-axis tiles exactly 3 steps away (up, down, left, right), skipping Mountains
+- Add to valid moves pool: all unclaimed non-Mountain tiles at exactly Manhattan distance 3 from the Tower (paths must follow cardinal directions away from the Tower with no backtracking)
 - Check for Barbarian visibility trigger in newly revealed tiles (see 3E)
 
 #### 3C — Cave
@@ -95,27 +96,27 @@ Implement all six special tile types and their effects on game state. This is th
 - Inert/connected Caves do not appear as Cave destinations
 
 #### 3D — Wizard
-- Wizard tile is subject to fog of war like all other tiles
+- Wizard tile is **always visible** on the board (not obscured by Fog of War)
 - On claim: set `wizard_held_by` to claiming player
 - On a future turn, player may teleport to any unclaimed, non-Mountain tile as their move
 - After teleport: `wizard_held_by = null`; Wizard tile marked as used (`wizard_used` state)
 - Track wizard-move intent separately from normal moves
 
 #### 3E — Barbarian
-- Each Barbarian group has a seeded direction (horizontal/vertical) assigned at board generation
 - Trigger condition: Barbarian tile becomes visible (enters any player's visibility set)
-  - This includes being added to a valid moves pool AND being revealed by Tower fog at distance < 3
+  - This includes being added to a valid moves pool AND being revealed by Tower fog at distance ≤ 3
 - On trigger:
-  - Sweep the assigned row or column: unclaim all tiles in path (restore to neutral Forest); Mountains are passed through but remain unclaimed and unclaimable
+  - The Barbarian picks the direction (horizontal or vertical) with the longest path from its position
+  - Sweep that row or column: unclaim all tiles in path (restore to neutral Forest); Mountains are passed through but remain unclaimed and unclaimable
   - Barbarian tile itself is replaced with a standard claimable Forest tile
   - Update both players' valid moves pools and fog state after the sweep
 
 ### Tests (must all pass before Stage 4)
 - **Plains**: correct single-pick flow; edge case with no available picks; state machine transitions correct
-- **Tower**: exactly 4 cardinal-axis valid moves added (or fewer at edges); fog revealed for all tiles within distance 3; Barbarian in Tower's fog zone triggers correctly
+- **Tower**: all tiles at exactly Manhattan distance 3 added as valid moves (fewer at board edges); fog revealed for all tiles within distance ≤ 3; Barbarian in Tower's fog zone triggers correctly
 - **Cave**: connection made when next move is a Cave; connection NOT made when next move is something else; inert Caves excluded from valid moves pool
-- **Wizard**: tile hidden by fog on initial board; `wizard_held_by` set on claim; teleport move is legal to any unclaimed non-Mountain tile; consumed after use
-- **Barbarian**: fires on entering valid moves pool; fires on Tower reveal at distance < 3; correct row/column swept; Barbarian tile becomes Forest afterwards; both players' pools updated after sweep
+- **Wizard**: tile always visible on initial board (not obscured by fog); `wizard_held_by` set on claim; teleport move is legal to any unclaimed non-Mountain tile; consumed after use
+- **Barbarian**: fires on entering valid moves pool; fires on Tower reveal at distance ≤ 3; direction chosen as longest-path row or column at trigger time; correct row/column swept; Barbarian tile becomes Forest afterwards; both players' pools updated after sweep
 - **Integration**: a single game exercising all tile types in sequence without state corruption
 
 ---
@@ -167,7 +168,7 @@ Implement the minimax AI with alpha-beta pruning and expose it via the `/ai-move
 - `game/ai/minimax.py`: minimax with alpha-beta pruning
   - Difficulty → search depth: Easy = 2, Medium = 4, Hard = 6
   - Move ordering: special tiles first (Wizard > Tower > Cave > Plains > Forest/Domain), then moves that expand the pool most
-  - Plains handling: enumerate all valid picks (Manhattan distance 1–2) as a single compound node
+  - Plains handling: enumerate all valid picks (Manhattan distance ≥ 2) as a single compound node
   - Wizard handling: evaluate wizard teleport as an alternative move on any AI turn
   - Return best move(s) to apply
 - `POST /game/{id}/ai-move` endpoint: runs minimax, applies result, returns updated state
@@ -203,7 +204,7 @@ Bootstrap the React app and render the game board with placeholder colors. The f
 - Submitting setup screen calls `POST /game/new` and renders the board
 - All tile types render with their correct placeholder color
 - Fog tiles render as dark overlay
-- Wizard tile is hidden by fog of war like all other tiles
+- Wizard tile is always visible on the board (not obscured by Fog of War)
 - Board scales correctly for a 12×10 default board and a 24×20 large board
 
 ---
@@ -243,7 +244,7 @@ Implement the multi-step interaction flows for Plains, Cave, and Wizard. These r
 
 ### What to Build
 - **Plains bonus pick**:
-  - After claiming a Plains tile, backend returns state with `phase: "plains_first_pick"` and valid moves = all unclaimed non-Mountain tiles within Manhattan distance 1–2
+  - After claiming a Plains tile, backend returns state with `phase: "plains_pick"` and valid moves = all unclaimed non-Mountain tiles at Manhattan distance ≥ 2 from the claimed Plains tile
   - UI prompts "Select your bonus tile" with those tiles highlighted
   - After pick: normal turn advance
 - **Cave selection**:
@@ -260,7 +261,7 @@ Implement the multi-step interaction flows for Plains, Cave, and Wizard. These r
   - Briefly flash the affected tiles before settling on the new state (CSS transition or brief highlight)
 
 ### Tests (must all pass before Stage 9)
-- Plains: after claiming Plains, UI shows all unclaimed non-Mountain tiles within Manhattan distance 1–2 as valid picks
+- Plains: after claiming Plains, UI shows all unclaimed non-Mountain tiles at Manhattan distance ≥ 2 as valid picks
 - Cave: Cave destinations highlighted alongside normal valid moves after Cave claim
 - Wizard button appears only when human holds the ability; disappears after use
 - Wizard mode highlights all unclaimed non-Mountain tiles
@@ -283,7 +284,7 @@ Verify the full system works correctly end-to-end across all game paths. Fix rou
 ### End-to-End Tests
 - **Full game — standard end**: play a complete game (using AI on Easy) until all tiles are claimed; verify winner is determined correctly
 - **Full game — dominant end**: construct a board state where one player reaches > 50% with no valid moves for opponent; verify dominant win fires
-- **Barbarian trigger via Tower**: set up a board where a Tower reveal exposes a Barbarian within distance < 3; verify Barbarian fires immediately on Tower claim
+- **Barbarian trigger via Tower**: set up a board where a Tower reveal exposes a Barbarian within distance ≤ 3; verify Barbarian fires immediately on Tower claim
 - **Wizard used by AI**: verify AI correctly uses Wizard teleport and it cannot be used again
 - **Cave chain**: claim a Cave, then claim another Cave; verify both become inert and subsequent moves no longer list them as Cave destinations
 - **Plains edge case**: claim a Plains tile on the board edge where no bonus tiles exist; verify turn advances normally with no pick phase
