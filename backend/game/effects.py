@@ -90,6 +90,10 @@ def _cave_moves(state, r, c, player):
             tile = state.board[nr][nc]
             if tile["type"] == CAVE and not tile["inert"] and tile["owner"] is None:
                 _add_valid_move(state, nr, nc, player, cave_source=(r, c))
+    for dr, dc in CARDINALS:
+        nr, nc = r + dr, c + dc
+        if state.in_bounds(nr, nc):
+            _add_valid_move(state, nr, nc, player)
 
 
 # ---------------------------------------------------------------------------
