@@ -439,22 +439,26 @@ function getAssetPath(tile) {
     case 'wizard': {
       // Show wizard_used.png after the ability has been consumed
       const used = owner && state.wizard_used[owner];
+      return `assets/wizard.png`;
       return used ? 'assets/wizard_used.png' : 'assets/wizard.png';
     }
 
     case 'cave':
+      return `assets/cave_neutral.png`;
       if (owner) {
         const side = owner === 'human' ? 'player' : 'ai';
         return inert ? `assets/cave_inert_${side}.png` : `assets/cave_${side}.png`;
       }
-      return 'assets/cave_neutral.png';
+      
 
     case 'domain':
       // Domain tiles are always owned; no neutral variant in the spec
+      return `assets/domain.png`;
       return `assets/domain_${owner === 'human' ? 'player' : 'ai'}.png`;
 
     default:
       // forest, plains, tower
+      return `assets/${type}_neutral.png`
       if (owner === 'human') return `assets/${type}_player.png`;
       if (owner === 'ai')    return `assets/${type}_ai.png`;
       return `assets/${type}_neutral.png`;
