@@ -7,10 +7,12 @@
  *   isWizardMode   – bool: wizard teleport selection is active
  *   onUseWizard    – called when "Use Wizard" button is clicked
  *   onCancelWizard – called when "Cancel" wizard button is clicked
+ *   onShowRules    – called when "Rules" button is clicked
+ *   onHome         – called when "Home" button is clicked
  */
 import { useState } from 'react'
 
-export default function HUD({ gameState, isAiThinking, isWizardMode, onUseWizard, onCancelWizard }) {
+export default function HUD({ gameState, isAiThinking, isWizardMode, onUseWizard, onCancelWizard, onShowRules, onHome }) {
   const { scores, turn, wizard_held_by, seed, board, phase } = gameState
   const [seedCopied, setSeedCopied] = useState(false)
 
@@ -108,6 +110,22 @@ export default function HUD({ gameState, isAiThinking, isWizardMode, onUseWizard
           Cancel Wizard
         </button>
       )}
+
+      <button
+        onClick={onShowRules}
+        style={btnStyle('#2c3e50')}
+        data-testid="btn-rules-hud"
+      >
+        Rules
+      </button>
+
+      <button
+        onClick={onHome}
+        style={btnStyle('#2c3e50')}
+        data-testid="btn-home-hud"
+      >
+        Home
+      </button>
 
       <span style={{ marginLeft: 'auto', color: '#7f8c8d', fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }} data-testid="hud-seed">
         Seed: {seed}

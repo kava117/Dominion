@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import RulesModal from './RulesModal'
 
 /**
  * SetupScreen — pre-game configuration form.
@@ -8,6 +9,7 @@ import { useState } from 'react'
  *   error   – optional error string to display
  */
 export default function SetupScreen({ onStart, error }) {
+  const [showRules, setShowRules] = useState(false)
   const [width,      setWidth]      = useState(12)
   const [height,     setHeight]     = useState(10)
   const [seed,       setSeed]       = useState('')
@@ -87,7 +89,18 @@ export default function SetupScreen({ onStart, error }) {
 
   return (
     <div style={containerStyle}>
-      <h1 style={{ textAlign: 'center', marginBottom: 24, letterSpacing: 2 }}>Domain Expansion</h1>
+      {showRules && <RulesModal onClose={() => setShowRules(false)} />}
+      <h1 style={{ textAlign: 'center', marginBottom: 8, letterSpacing: 2 }}>Domain Expansion</h1>
+      <div style={{ textAlign: 'center', marginBottom: 20 }}>
+        <button
+          type="button"
+          onClick={() => setShowRules(true)}
+          style={{ background: 'none', border: '1px solid #4a5568', borderRadius: 6, color: '#bdc3c7', cursor: 'pointer', fontSize: 13, padding: '4px 12px' }}
+          data-testid="btn-rules-setup"
+        >
+          How to Play
+        </button>
+      </div>
       <form onSubmit={handleSubmit} noValidate>
         <div style={fieldStyle}>
           <label style={labelStyle}>Width (6–24)</label>
