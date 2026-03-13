@@ -101,8 +101,8 @@ def generate_board(width, height, seed, domain_tiles_per_player=2):
                 owner = "ai"
                 t = DOMAIN
 
-            # Wizard is always visible; claimed tiles start visible
-            visible = (owner is not None) or (t == WIZARD)
+            # Only claimed tiles start visible; all others start hidden
+            visible = owner is not None
 
             row.append({
                 "type": t,

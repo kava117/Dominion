@@ -45,15 +45,25 @@ def add_tile_valid_moves(state, r, c, player):
     tile = state.board[r][c]
     t = tile["type"]
 
-    if t in (FOREST, DOMAIN):
+    if t == DOMAIN:
+        _reveal_neighbors(state, r, c)  # Reveal all adjacent tiles, including mountains
+        _forest_moves(state, r, c, player)
+    elif t == FOREST:
         _forest_moves(state, r, c, player)
     elif t == PLAINS:
         _plains_moves(state, r, c, player)
     elif t == TOWER:
         _tower_moves(state, r, c, player)
-    elif t == CAVE and not tile["inert"]:
-        _cave_moves(state, r, c, player)
-    # WIZARD / BARBARIAN / MOUNTAIN: no valid moves added
+    elif t == CAVE:
+        if not tile["inert"]:
+            _cave_moves(state, r, c, player)
+        else:
+            # Inert caves (used for cave-link teleport) still grant adjacent moves
+            _forest_moves(state, r, c, player)
+    elif t == WIZARD:
+        # Wizard grants adjacent moves in addition to the one-time teleport ability
+        _forest_moves(state, r, c, player)
+    # BARBARIAN / MOUNTAIN: no valid moves added
 
 
 def _forest_moves(state, r, c, player):
@@ -160,6 +170,8 @@ def apply_move(state, r, c, player, wizard=False):
             _remove_from_pools(state, r, c)
             _drop_cave_source_moves(state, source)
             _reveal_neighbors(state, r, c)
+            # Inert claimed cave still grants adjacent moves
+            _forest_moves(state, r, c, player)
             events.append({
                 "type": "cave_connection",
                 "cave1": list(source),
@@ -176,8 +188,7 @@ def apply_move(state, r, c, player, wizard=False):
             if tile["type"] == WIZARD:
                 state.wizard_held_by = player
                 events.append({"type": "wizard_acquired", "player": player})
-            else:
-                add_tile_valid_moves(state, r, c, player)
+            add_tile_valid_moves(state, r, c, player)
 
     # Trigger any newly visible barbarians
     events.extend(_process_barbarian_triggers(state))
@@ -272,14 +283,15 @@ def _trigger_barbarian(state, r, c):
     """
     direction = _barbarian_direction(state, r, c)
 
+    # Charge outward from the barbarian's tile toward the chosen edge
     if direction == "left":
-        for nc in range(0, c + 1):
+        for nc in range(c, -1, -1):
             _barbarian_hit(state, r, nc)
     elif direction == "right":
         for nc in range(c, state.width):
             _barbarian_hit(state, r, nc)
     elif direction == "up":
-        for nr in range(0, r + 1):
+        for nr in range(r, -1, -1):
             _barbarian_hit(state, nr, c)
     else:  # down
         for nr in range(r, state.height):
@@ -298,10 +310,10 @@ def _trigger_barbarian(state, r, c):
 def _barbarian_hit(state, r, c):
     """Barbarian charges through tile at (r, c): unclaims it if owned.
 
-    Does NOT reveal hidden tiles. Mountains are passed through untouched.
+    Does NOT reveal hidden tiles. Mountains and Domain tiles are untouched.
     """
     tile = state.board[r][c]
-    if tile["type"] == MOUNTAIN:
+    if tile["type"] in (MOUNTAIN, DOMAIN):
         return
     if tile["owner"] is not None:
         state.scores[tile["owner"]] -= 1

@@ -37,41 +37,121 @@
   </div>
 
   <!-- ── Game screen ────────────────────────────────────────────── -->
-  <div id="game-screen" class="screen hidden">
+  <div id="game-screen" class="hidden">
 
-    <div id="hud">
-      <div id="hud-turn" class="hud-block">
-        <div id="turn-spinner" class="spinner hidden"></div>
-        <span id="turn-label">Your Turn</span>
+    <!-- ── Tile legend — left side, vertically centered ──────────── -->
+    <aside id="legend-panel">
+      <h3 class="legend-title">Tile Guide</h3>
+
+      <div class="legend-item">
+        <div class="legend-swatch" style="background-color:var(--c-human);background-image:url('assets/domain.png')"></div>
+        <div class="legend-info">
+          <strong>Domain</strong>
+          <span>The start of your empire. Can claim adjacent tiles.</span>
+        </div>
       </div>
 
-      <div class="hud-block">
-        <span class="hud-key">You</span>
-        <span id="score-human" class="score score-human">0</span>
-        <span class="hud-sep">vs</span>
-        <span id="score-ai" class="score score-ai">0</span>
-        <span class="hud-key">AI</span>
+      <div class="legend-item">
+        <div class="legend-swatch" style="background-color:var(--c-mountain);background-image:url('assets/mountain.png')"></div>
+        <div class="legend-info">
+          <strong>Mountain</strong>
+          <span>Impassable land. Cannot be claimed.</span>
+        </div>
       </div>
 
-      <div class="hud-block">
-        <span class="hud-key">Remaining</span>
-        <span id="remaining">—</span>
+      <div class="legend-item">
+        <div class="legend-swatch" style="background-color:var(--c-forest);background-image:url('assets/forest_neutral.png')"></div>
+        <div class="legend-info">
+          <strong>Forest</strong>
+          <span>Can claim adjacent tiles.</span>
+        </div>
       </div>
 
-      <div id="wizard-hud" class="hud-block hidden">
-        <span id="wizard-label"></span>
-        <button id="wizard-btn" class="btn btn-wizard hidden">Use Wizard</button>
+      <div class="legend-item">
+        <div class="legend-swatch" style="background-color:var(--c-plains);background-image:url('assets/plains_neutral.png')"></div>
+        <div class="legend-info">
+          <strong>Plains</strong>
+          <span>Can claim tiles up to 2 spaces away.</span>
+        </div>
       </div>
 
-      <div class="hud-block">
-        <span class="hud-key">Seed</span>
-        <span id="seed-display">—</span>
+      <div class="legend-item">
+        <div class="legend-swatch" style="background-color:var(--c-tower);background-image:url('assets/tower_neutral.png')"></div>
+        <div class="legend-info">
+          <strong>Tower</strong>
+          <span>Can claim tiles exactly 3 spaces away.</span>
+        </div>
       </div>
-    </div>
 
-    <div id="board-wrap">
-      <div id="board"></div>
-    </div>
+      <div class="legend-item">
+        <div class="legend-swatch" style="background-color:var(--c-cave);background-image:url('assets/cave_neutral.png')"></div>
+        <div class="legend-info">
+          <strong>Cave</strong>
+          <span>Can link to exactly one other cave on the map. Can claim adjacent tiles.</span>
+        </div>
+      </div>
+
+      <div class="legend-item">
+        <div class="legend-swatch" style="background-color:var(--c-wizard);background-image:url('assets/wizard.png')"></div>
+        <div class="legend-info">
+          <strong>Wizard</strong>
+          <span>Can claim adjacent tiles. Provides a single-use action to claim any unclaimed tile.</span>
+        </div>
+      </div>
+
+      <div class="legend-item">
+        <div class="legend-swatch" style="background-color:var(--c-barbarian);background-image:url('assets/barbarian.png')"></div>
+        <div class="legend-info">
+          <strong>Barbarian</strong>
+          <span>Raging warlords. When revealed, will unclaim all territories in their path.</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ── Board area — fills remaining space, centers board-column ── -->
+    <div id="board-area">
+      <div id="board-column">
+
+        <div id="hud">
+          <div id="hud-turn" class="hud-block">
+            <div id="turn-spinner" class="spinner hidden"></div>
+            <span id="turn-label">Your Turn</span>
+          </div>
+
+          <div class="hud-block">
+            <span class="hud-key">You</span>
+            <span id="score-human" class="score score-human">0</span>
+            <span class="hud-sep">vs</span>
+            <span id="score-ai" class="score score-ai">0</span>
+            <span class="hud-key">AI</span>
+          </div>
+
+          <div class="hud-block">
+            <span class="hud-key">Remaining</span>
+            <span id="remaining">—</span>
+          </div>
+
+          <div id="wizard-hud" class="hud-block hidden">
+            <span id="wizard-label"></span>
+            <button id="wizard-btn" class="btn btn-wizard hidden">Use Wizard</button>
+          </div>
+
+          <div class="hud-block">
+            <span class="hud-key">Seed</span>
+            <span id="seed-display">—</span>
+          </div>
+
+          <div class="hud-block hud-right">
+            <button id="new-game-btn" class="btn btn-secondary">New Game</button>
+          </div>
+        </div>
+
+        <div id="board-wrap">
+          <div id="board"></div>
+        </div>
+
+      </div><!-- #board-column -->
+    </div><!-- #board-area -->
 
     <div id="toast" class="hidden"></div>
   </div>

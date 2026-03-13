@@ -12,12 +12,13 @@ DEPTH_FOR_DIFFICULTY = {"easy": 2, "medium": 4, "hard": 6}
 # Public API
 # ---------------------------------------------------------------------------
 
-def choose_move(state):
+def choose_move(state, force=False):
     """Return the best move for the AI as {"row": r, "col": c, "wizard": bool}.
 
     Returns None if the AI has no moves (shouldn't happen in normal play).
+    If force=True, use depth 1 for an instant response (timeout fallback).
     """
-    depth = DEPTH_FOR_DIFFICULTY.get(state.difficulty, 4)
+    depth = 1 if force else DEPTH_FOR_DIFFICULTY.get(state.difficulty, 4)
     _, move = _minimax(state, depth, float("-inf"), float("inf"), maximizing=True)
     return move
 

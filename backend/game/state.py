@@ -29,10 +29,17 @@ class GameState:
 
         # Initialise valid moves from starting domain tiles
         from game.effects import add_tile_valid_moves
+        from game.board import BARBARIAN
         for pos in human_starts:
             add_tile_valid_moves(self, pos[0], pos[1], "human")
         for pos in ai_starts:
             add_tile_valid_moves(self, pos[0], pos[1], "ai")
+
+        # Barbarians always start hidden regardless of proximity to domain tiles
+        for r in range(self.height):
+            for c in range(self.width):
+                if self.board[r][c]["type"] == BARBARIAN:
+                    self.board[r][c]["visible"] = False
 
         self._update_scores()
 
@@ -115,6 +122,7 @@ class GameState:
             "turn": self.turn,
             "status": self.status,
             "wizard_held_by": self.wizard_held_by,
+            "wizard_used": dict(self.wizard_used),
             "wizard_available": (
                 self.wizard_held_by == self.turn
                 and not self.wizard_used.get(self.turn, False)

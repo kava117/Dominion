@@ -142,7 +142,8 @@ def ai_move(game_id):
     if state.turn != "ai":
         return _err("It is not the AI player's turn.")
 
-    move = choose_move(state)
+    force = request.args.get('force') == '1'
+    move = choose_move(state, force=force)
     if move is None:
         return _err("AI has no available moves.")
 

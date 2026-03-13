@@ -60,12 +60,13 @@ const TYPE_LABEL = {
 };
 
 function computeTileSize() {
-  const wrap = document.getElementById('board-wrap');
-  const maxW = wrap.clientWidth  - 4;
-  const maxH = wrap.clientHeight - 4;
-  const byW  = Math.floor(maxW / state.width);
-  const byH  = Math.floor(maxH / state.height);
-  return Math.max(Math.min(byW, byH, 48), 16);
+  const area = document.getElementById('board-area');
+  const hud  = document.getElementById('hud');
+  const areaW = area.clientWidth  - 4;
+  const areaH = area.clientHeight - hud.offsetHeight - 4;
+  const byW   = Math.floor(areaW / state.width);
+  const byH   = Math.floor(areaH / state.height);
+  return Math.max(Math.min(byW, byH), 24);
 }
 
 function renderAll() {
@@ -80,25 +81,43 @@ function renderAll() {
 }
 
 function renderBoard(tileSize) {
+  if (!state || !state.board) return;
+
   const boardEl = document.getElementById('board');
-  boardEl.style.gridTemplateColumns = `repeat(${state.width},  ${tileSize}px)`;
+  boardEl.style.gridTemplateColumns = `repeat(${state.width}, ${tileSize}px)`;
   boardEl.style.gridTemplateRows    = `repeat(${state.height}, ${tileSize}px)`;
 
-  const validSet = new Set((state.valid_moves || []).map(([r, c]) => `${r},${c}`));
-  const wizSet   = wizardMode ? buildWizardTargets() : new Set();
+  // Only show valid moves on the human's turn; hide them while AI is playing
+  const validSet = (state.turn === 'human')
+    ? new Set((state.valid_moves || []).map(([r, c]) => `${r},${c}`))
+    : new Set();
+  const wizSet = wizardMode ? buildWizardTargets() : new Set();
+
+  // Build into a fragment first — if anything throws, the existing board is untouched
+  const frag = document.createDocumentFragment();
+  try {
+    for (let r = 0; r < state.height; r++) {
+      for (let c = 0; c < state.width; c++) {
+        frag.appendChild(buildTile(r, c, validSet, wizSet));
+      }
+    }
+  } catch (err) {
+    console.error('renderBoard error at tile', err);
+    return; // leave current board visible rather than going black
+  }
 
   boardEl.innerHTML = '';
-
-  for (let r = 0; r < state.height; r++) {
-    for (let c = 0; c < state.width; c++) {
-      boardEl.appendChild(buildTile(r, c, validSet, wizSet));
-    }
-  }
+  boardEl.appendChild(frag);
 }
 
 function buildTile(r, c, validSet, wizSet) {
-  const tile  = state.board[r][c];
-  const key   = `${r},${c}`;
+  const tile = (state.board[r] || [])[c];
+  if (!tile) {
+    const blank = document.createElement('div');
+    blank.className = 'tile t-fog';
+    return blank;
+  }
+  const key = `${r},${c}`;
   const isValid   = !wizardMode && validSet.has(key);
   const isWizVis  =  wizardMode && wizSet.has(key) &&  tile.visible;  // gold highlight
   const isWizFog  =  wizardMode && wizSet.has(key) && !tile.visible;  // clickable fog
@@ -190,18 +209,24 @@ function updateWizardHUD() {
 
   hudEl.classList.remove('hidden');
 
+  const wizardUsed = state.wizard_used || {};
+
   if (held === 'human') {
-    if (avail) {
+    if (wizardUsed.human) {
+      lblEl.textContent = '✨ Wizard used';
+      btnEl.classList.add('hidden');
+    } else if (avail) {
       lblEl.textContent = '✨ Wizard ready';
       btnEl.classList.remove('hidden');
       btnEl.textContent = wizardMode ? 'Cancel' : 'Use Wizard';
     } else {
-      lblEl.textContent = '✨ Wizard used';
+      // Human holds it but it's AI's turn
+      lblEl.textContent = '✨ Wizard ready';
       btnEl.classList.add('hidden');
     }
   } else {
     // AI holds wizard
-    lblEl.textContent = avail ? '🤖 AI holds wizard' : '🤖 AI used wizard';
+    lblEl.textContent = wizardUsed.ai ? '🤖 AI used wizard' : '🤖 AI holds wizard';
     btnEl.classList.add('hidden');
   }
 }
@@ -217,7 +242,7 @@ function buildWizardTargets() {
   const s = new Set();
   state.board.forEach((row, r) => {
     row.forEach((tile, c) => {
-      if (tile.owner === null && tile.type !== 'mountain') {
+      if (tile.owner === null && tile.type !== 'mountain' && tile.type !== 'barbarian') {
         s.add(`${r},${c}`);
       }
     });
@@ -235,6 +260,7 @@ function humanHasMoves() {
 async function autoPassIfNeeded() {
   if (state.status !== 'in_progress') return;
   if (state.turn !== 'human')         return;
+  if (wizardMode)                     return; // human is selecting a wizard target
   if (humanHasMoves())                return;
 
   actionInProgress = true;
@@ -286,7 +312,9 @@ async function submitMove(r, c, wizard = false) {
     });
   } catch (e) {
     console.error('Move error:', e.message);
+    toast(`Move failed: ${e.message}`, 3000);
     actionInProgress = false;
+    renderAll();
     return;
   }
 
@@ -309,36 +337,102 @@ async function submitMove(r, c, wizard = false) {
 }
 
 // ── AI move ────────────────────────────────────────────────────────────────
+// Runs AI turns in a loop: if the human still has no moves after the AI
+// plays, silently passes for them and lets the AI go again.
+// Times out after 10 s and falls back to a forced quick move (depth 1).
 async function runAI() {
   actionInProgress = true;
-  setThinking(true);
 
-  let data;
-  try {
-    // Run fetch and a minimum display timer concurrently
-    [data] = await Promise.all([
-      apiFetch(`/game/${gameId}/ai-move`, { method: 'POST' }),
-      sleep(600),
-    ]);
-  } catch (e) {
+  while (state.status === 'in_progress' && state.turn === 'ai') {
+    if (!gameId) break; // game was abandoned (New Game clicked)
+
+    setThinking(true);
+
+    let data;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10_000);
+
+    try {
+      [data] = await Promise.all([
+        fetch(API + `/game/${gameId}/ai-move`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: controller.signal,
+        }).then(async r => {
+          const d = await r.json();
+          if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
+          return d;
+        }),
+        sleep(600),
+      ]);
+      clearTimeout(timeoutId);
+    } catch (e) {
+      clearTimeout(timeoutId);
+      setThinking(false);
+      if (e.name === 'AbortError') {
+        // 10 s timeout — request a depth-1 forced move.
+        // The server may have already completed the original request, so if
+        // force=1 is rejected (wrong turn), fall back to fetching current state.
+        try {
+          data = await apiFetch(`/game/${gameId}/ai-move?force=1`, { method: 'POST' });
+        } catch (e2) {
+          console.error('AI forced move failed, recovering state:', e2.message);
+          try {
+            data = await apiFetch(`/game/${gameId}`);
+          } catch (e3) {
+            break;
+          }
+        }
+      } else {
+        console.error('AI move error:', e.message);
+        try {
+          data = await apiFetch(`/game/${gameId}`);
+        } catch (e2) {
+          break;
+        }
+      }
+    }
+
     setThinking(false);
-    console.error('AI move error:', e.message);
-    return;
+
+    if (!gameId) break; // abandoned while waiting
+
+    state = data;
+    renderAll();
+
+    await handleBarbarians(data.events || []);
+
+    if (state.status !== 'in_progress') {
+      actionInProgress = false;
+      showEndModal();
+      return;
+    }
+
+    // If the human still has no moves, silently pass their turn and loop
+    if (state.turn === 'human' && !humanHasMoves()) {
+      let passData;
+      try {
+        passData = await apiFetch(`/game/${gameId}/pass`, { method: 'POST' });
+      } catch (e) {
+        console.error('Pass error:', e.message);
+        break;
+      }
+
+      state = passData;
+      renderAll();
+
+      if (state.status !== 'in_progress') {
+        actionInProgress = false;
+        showEndModal();
+        return;
+      }
+      // state.turn is now 'ai' — loop condition re-evaluated
+    }
   }
 
+  // Safety net: ensure spinner is off and board reflects latest state
   setThinking(false);
-
-  state = data;
-  renderAll();
-
-  await handleBarbarians(data.events || []);
-
-  if (state.status !== 'in_progress') {
-    actionInProgress = false;
-    showEndModal();
-    return;
-  }
-
+  if (state) renderAll();
   actionInProgress = false;
 }
 
@@ -371,9 +465,10 @@ function flashPath(br, bc, direction) {
 
 function chargePath(r, c, direction) {
   const tiles = [];
-  if (direction === 'left')  { for (let nc = 0;        nc <= c;           nc++) tiles.push([r, nc]); }
+  // Sweep from the barbarian's tile outward toward the edge
+  if (direction === 'left')  { for (let nc = c;        nc >= 0;           nc--) tiles.push([r, nc]); }
   if (direction === 'right') { for (let nc = c;        nc < state.width;  nc++) tiles.push([r, nc]); }
-  if (direction === 'up')    { for (let nr = 0;        nr <= r;           nr++) tiles.push([nr, c]); }
+  if (direction === 'up')    { for (let nr = r;        nr >= 0;           nr--) tiles.push([nr, c]); }
   if (direction === 'down')  { for (let nr = r;        nr < state.height; nr++) tiles.push([nr, c]); }
   return tiles;
 }
@@ -418,6 +513,17 @@ document.getElementById('play-again-btn').addEventListener('click', () => {
   document.getElementById('setup-screen').classList.remove('hidden');
   gameId = state = null;
   wizardMode = false;
+  actionInProgress = false;
+});
+
+document.getElementById('new-game-btn').addEventListener('click', () => {
+  gameId = null;
+  state = null;
+  wizardMode = false;
+  actionInProgress = false;
+  document.getElementById('end-modal').classList.add('hidden');
+  document.getElementById('game-screen').classList.add('hidden');
+  document.getElementById('setup-screen').classList.remove('hidden');
 });
 
 // ── Asset mapping ──────────────────────────────────────────────────────────
@@ -436,12 +542,8 @@ function getAssetPath(tile) {
     case 'barbarian':
       return 'assets/barbarian.png';
 
-    case 'wizard': {
-      // Show wizard_used.png after the ability has been consumed
-      const used = owner && state.wizard_used[owner];
-      return `assets/wizard.png`;
-      return used ? 'assets/wizard_used.png' : 'assets/wizard.png';
-    }
+    case 'wizard':
+      return 'assets/wizard.png';
 
     case 'cave':
       return `assets/cave_neutral.png`;
