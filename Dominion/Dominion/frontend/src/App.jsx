@@ -3,6 +3,7 @@ import SetupScreen from './components/SetupScreen'
 import Board from './components/Board'
 import HUD from './components/HUD'
 import EndModal from './components/EndModal'
+import RulesModal from './components/RulesModal'
 import { newGame, submitMove, triggerAiMove } from './api'
 
 function App() {
@@ -13,6 +14,7 @@ function App() {
   const [isWizardMode, setIsWizardMode] = useState(false)
   const [barbarianFlash, setBarbarianFlash] = useState([])
   const [apiError, setApiError] = useState('')
+  const [showRules, setShowRules] = useState(false)
 
   // ── Detect tiles swept by a Barbarian (owned → unowned) ─────────────────
   function detectBarbarian(oldBoard, newBoard) {
@@ -106,6 +108,7 @@ function App() {
 
   return (
     <div style={{ background: '#0f1923', minHeight: '100vh', fontFamily: 'sans-serif' }}>
+      {showRules && <RulesModal onClose={() => setShowRules(false)} />}
       {apiError && (
         <div
           style={{
@@ -128,6 +131,8 @@ function App() {
         isWizardMode={isWizardMode}
         onUseWizard={enterWizardMode}
         onCancelWizard={cancelWizardMode}
+        onShowRules={() => setShowRules(true)}
+        onHome={handleNewGame}
       />
       <div style={{ padding: 16 }}>
         <Board
