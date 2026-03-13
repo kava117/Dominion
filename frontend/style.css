@@ -308,7 +308,7 @@ input[type="number"]:focus, select:focus {
   content: '';
   position: absolute;
   inset: 1px;
-  border: 2px solid rgba(100,200,255,0.85);
+  border: 2px solid rgba(255,215,0,0.9);
   border-radius: 2px;
   pointer-events: none;
   box-sizing: border-box;

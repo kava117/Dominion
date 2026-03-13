@@ -6,6 +6,29 @@ let state       = null;   // latest game state from API
 let wizardMode  = false;  // true while the human is selecting a wizard target
 let actionInProgress = false; // prevents re-entrant auto-pass
 
+// ── Tile variant map ────────────────────────────────────────────────────────
+// Maps "r,c" → variant index (1-based).  Assigned once per board so the same
+// tile always shows the same sprite across re-renders, but different tiles of
+// the same type get a random selection.
+const tileVariants = {};
+
+// How many sprite variants exist for each tile type.
+// Adding forest_neutral_2.png and bumping this to 2 is all that's needed.
+const VARIANT_COUNTS = {
+  forest:   3,
+  plains:   2,
+  mountain: 3,
+};
+
+function getTileVariant(r, c, type) {
+  const key = `${r},${c}`;
+  if (!(key in tileVariants)) {
+    const count = VARIANT_COUNTS[type] || 1;
+    tileVariants[key] = Math.floor(Math.random() * count) + 1;
+  }
+  return tileVariants[key];
+}
+
 // ── API ────────────────────────────────────────────────────────────────────
 // Flask serves both frontend and API from the same origin.
 const API = '';
@@ -42,6 +65,8 @@ async function startGame() {
     gameId     = data.game_id;
     state      = data;
     wizardMode = false;
+    // Clear cached variants so each new game gets a fresh random tile layout
+    Object.keys(tileVariants).forEach(k => delete tileVariants[k]);
 
     document.getElementById('setup-screen').classList.add('hidden');
     document.getElementById('game-screen').classList.remove('hidden');
@@ -139,7 +164,8 @@ function buildTile(r, c, validSet, wizSet) {
   }
 
   // Asset image — renders over the placeholder colour; ignored silently on 404
-  div.style.backgroundImage    = `url('${getAssetPath(tile)}')`;
+  const variant = getTileVariant(r, c, tile.type);
+  div.style.backgroundImage    = `url('${getAssetPath(tile, variant)}')`;
   div.style.backgroundSize     = '100% 100%';
   div.style.backgroundRepeat   = 'no-repeat';
 
@@ -529,7 +555,7 @@ document.getElementById('new-game-btn').addEventListener('click', () => {
 // ── Asset mapping ──────────────────────────────────────────────────────────
 // Returns the expected PNG path for a tile.  If the file doesn't exist the
 // browser silently ignores the background-image and the CSS colour shows through.
-function getAssetPath(tile) {
+function getAssetPath(tile, variant = 1) {
   const { type, owner, inert, visible } = tile;
 
   // Fogged tile
@@ -537,7 +563,7 @@ function getAssetPath(tile) {
 
   switch (type) {
     case 'mountain':
-      return 'assets/mountain.png';
+      return variant > 1 ? `assets/mountain_${variant}.png` : 'assets/mountain.png';
 
     case 'barbarian':
       return 'assets/barbarian.png';
@@ -546,24 +572,19 @@ function getAssetPath(tile) {
       return 'assets/wizard.png';
 
     case 'cave':
-      return `assets/cave_neutral.png`;
-      if (owner) {
-        const side = owner === 'human' ? 'player' : 'ai';
-        return inert ? `assets/cave_inert_${side}.png` : `assets/cave_${side}.png`;
-      }
-      
+      return inert ? 'assets/cave_used.png' : 'assets/cave_unused.png';
+
 
     case 'domain':
       // Domain tiles are always owned; no neutral variant in the spec
       return `assets/domain.png`;
       return `assets/domain_${owner === 'human' ? 'player' : 'ai'}.png`;
 
-    default:
-      // forest, plains, tower
-      return `assets/${type}_neutral.png`
-      if (owner === 'human') return `assets/${type}_player.png`;
-      if (owner === 'ai')    return `assets/${type}_ai.png`;
-      return `assets/${type}_neutral.png`;
+    default: {
+      // forest, plains, tower — append variant suffix for variants 2+
+      const suffix = variant > 1 ? `_${variant}` : '';
+      return `assets/${type}_neutral${suffix}.png`;
+    }
   }
 }
 
